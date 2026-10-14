@@ -81,4 +81,17 @@ describe('parseMsg', () => {
     const out = parseMsg({ type: 'layout', surfaces: [surface('s1', { evil: 1 })], extra: true });
     expect(out).toEqual({ type: 'layout', surfaces: [surface('s1')] });
   });
+  it('accepts a pattern message with a boolean flag', () => {
+    expect(parseMsg({ type: 'pattern', on: true })).toEqual({ type: 'pattern', on: true });
+    expect(parseMsg({ type: 'pattern', on: false })).toEqual({ type: 'pattern', on: false });
+  });
+  it('rejects a pattern message whose flag is missing or not a boolean', () => {
+    expect(parseMsg({ type: 'pattern' })).toBeNull();
+    expect(parseMsg({ type: 'pattern', on: 1 })).toBeNull();
+    expect(parseMsg({ type: 'pattern', on: 'true' })).toBeNull();
+    expect(parseMsg({ type: 'pattern', on: null })).toBeNull();
+  });
+  it('drops unknown fields from a pattern message', () => {
+    expect(parseMsg({ type: 'pattern', on: true, evil: 1 })).toEqual({ type: 'pattern', on: true });
+  });
 });

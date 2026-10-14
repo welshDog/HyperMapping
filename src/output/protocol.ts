@@ -7,6 +7,7 @@ export type Msg =
   | { type: 'hello' } // output window -> editor: "send me everything you have"
   | { type: 'surfaces'; surfaces: Surface[] } // editor -> output: the whole face list
   | { type: 'layout'; surfaces: Surface[] } // simulator -> editor: "use this face layout"
+  | { type: 'pattern'; on: boolean } // editor -> others: show the test pattern even when a video is loaded
   | { type: 'video'; blob: Blob }; // editor -> output (structured-clone copy)
 
 /** Validate anything that arrives on the channel; never trust the wire. */
@@ -21,6 +22,8 @@ export function parseMsg(data: unknown): Msg | null {
       const surfaces = parseSurfaceList(d.surfaces);
       return surfaces ? { type: d.type, surfaces } : null;
     }
+    case 'pattern':
+      return typeof d.on === 'boolean' ? { type: 'pattern', on: d.on } : null;
     case 'video':
       return d.blob instanceof Blob ? { type: 'video', blob: d.blob } : null;
     default:
