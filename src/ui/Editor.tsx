@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
+import { FULL_RECT, type Surface } from '../surfaces/types';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { isValidQuad } from '../warp/quad';
 import type { Corners } from '../warp/types';
@@ -10,6 +11,8 @@ import { useWakeLock } from './wakeLock';
 const TAP_TO_START = 'Tap anywhere to start the video';
 
 const INITIAL: Corners = { tl: [0.2, 0.2], tr: [0.8, 0.2], br: [0.8, 0.8], bl: [0.2, 0.8] };
+// Task 3 transitional helper: the app still has exactly one face here.
+const toSurfaces = (c: Corners): Surface[] => [{ id: 's1', corners: c, srcRect: FULL_RECT }];
 
 export function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,12 +52,12 @@ export function Editor() {
     ch.onmessage = (ev) => {
       if (parseMsg(ev.data)?.type !== 'hello') return;
       // A new output window asked for everything we have.
-      ch.postMessage({ type: 'state', corners: cornersRef.current });
+      ch.postMessage({ type: 'surfaces', surfaces: toSurfaces(cornersRef.current) });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
     // An output window that was already open (e.g. this editor was reloaded) never sends
     // a new hello, so push our state once now.
-    ch.postMessage({ type: 'state', corners: cornersRef.current });
+    ch.postMessage({ type: 'surfaces', surfaces: toSurfaces(cornersRef.current) });
     if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
@@ -68,7 +71,7 @@ export function Editor() {
       if (!isValidQuad(next)) return false;
       cornersRef.current = next;
       renderer?.setCorners(next);
-      channelRef.current?.postMessage({ type: 'state', corners: next });
+      channelRef.current?.postMessage({ type: 'surfaces', surfaces: toSurfaces(next) });
       return true;
     },
     [renderer],
