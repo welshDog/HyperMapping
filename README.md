@@ -51,7 +51,6 @@ then open `https://localhost:5173`.
   projector over USB-C/HDMI, use Play mode (screen mirror). True extended display needs the native shell (later milestone).
 - iPhone Safari cannot make a non-video element fullscreen, so Play mode stays inside the browser
   chrome there. Use Share > Add to Home Screen and launch from the icon instead (the manifest is fullscreen).
-- No saving yet (Milestone 2).
 
 ## Verification status
 

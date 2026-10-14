@@ -16,7 +16,9 @@ export function downloadText(filename: string, text: string): void {
     ok = true;
   } finally {
     a?.remove();
-    if (ok) window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // iOS Safari asks "Download?" and only fetches the blob after the user confirms,
+    // so keep the URL alive for a minute on success.
+    if (ok) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     else URL.revokeObjectURL(url);
   }
 }
