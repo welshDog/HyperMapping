@@ -1,3 +1,4 @@
+import type { SrcRect } from '../surfaces/types';
 import { applyHomography, computeHomography } from './homography';
 import { isValidQuad } from './quad';
 import { UNIT_CORNERS, cornersToArray, type Corners, type Vec2 } from './types';
@@ -62,6 +63,18 @@ export function warpedPositions(
       buf[k++] = x;
       buf[k++] = y;
     }
+  }
+  return buf;
+}
+
+/** Map the base 0..1 mesh UVs into a slice of the video: u = u0 + baseU*(u1-u0), same for v. */
+export function scaleUvs(base: Float32Array, rect: SrcRect, out?: Float32Array): Float32Array {
+  const buf = out ?? new Float32Array(base.length);
+  const du = rect.u1 - rect.u0;
+  const dv = rect.v1 - rect.v0;
+  for (let i = 0; i < base.length; i += 2) {
+    buf[i] = rect.u0 + base[i] * du;
+    buf[i + 1] = rect.v0 + base[i + 1] * dv;
   }
   return buf;
 }

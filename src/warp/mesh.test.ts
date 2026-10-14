@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTopology, warpedPositions, unitToNdc, GRID } from './mesh';
+import { buildTopology, warpedPositions, unitToNdc, GRID, scaleUvs } from './mesh';
 import type { Corners } from './types';
 
 const SQUARE: Corners = { tl: [0, 0], tr: [1, 0], br: [1, 1], bl: [0, 1] };
@@ -62,5 +62,26 @@ describe('warpedPositions', () => {
   it('writes into the provided buffer and returns it', () => {
     const out = new Float32Array(882);
     expect(warpedPositions(SQUARE, GRID, GRID, out)).toBe(out);
+  });
+});
+
+describe('scaleUvs', () => {
+  it('maps the base 0..1 UVs into the slice', () => {
+    const t = buildTopology();
+    const out = scaleUvs(t.uvs, { u0: 0.25, v0: 0.1, u1: 0.75, v1: 0.9 });
+    expect(out.length).toBe(882);
+    expect([out[0], out[1]].map((n) => +n.toFixed(5))).toEqual([0.25, 0.1]);
+    expect([out[880], out[881]].map((n) => +n.toFixed(5))).toEqual([0.75, 0.9]);
+    expect([out[40], out[41]].map((n) => +n.toFixed(5))).toEqual([0.75, 0.1]); // vertex 20 = top-right
+  });
+  it('the full rect leaves UVs unchanged', () => {
+    const t = buildTopology();
+    const out = scaleUvs(t.uvs, { u0: 0, v0: 0, u1: 1, v1: 1 });
+    expect(Array.from(out)).toEqual(Array.from(t.uvs));
+  });
+  it('writes into a provided buffer and returns it', () => {
+    const t = buildTopology();
+    const buf = new Float32Array(882);
+    expect(scaleUvs(t.uvs, { u0: 0, v0: 0, u1: 0.5, v1: 1 }, buf)).toBe(buf);
   });
 });
