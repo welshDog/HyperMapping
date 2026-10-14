@@ -18,7 +18,8 @@ export function describeSolve(r: SolveResult): string[] {
     } else if (s.reason === 'degenerate') {
       lines.push(`Skipped ${s.face}: edge-on or too small to map from here.`);
     }
-    // 'facing-away' is the normal case for the back of a box: not worth a line.
+    // 'facing-away' is intentionally unreported (the normal case for the back of a box). Any new
+    // SkipReason must be handled above, or it will silently go unmentioned.
   }
   return lines;
 }

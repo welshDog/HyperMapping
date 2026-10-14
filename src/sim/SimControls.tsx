@@ -1,4 +1,5 @@
 import type { Box } from './box';
+import { ASPECT_PRESETS } from './defaults';
 import type { Projector } from './solve';
 
 interface SliderProps {
@@ -45,6 +46,7 @@ interface Props {
 export function SimControls({ box, projector, onBox, onProjector }: Props) {
   const setB = (patch: Partial<Box>) => onBox({ ...box, ...patch });
   const setP = (patch: Partial<Projector>) => onProjector({ ...projector, ...patch });
+  const presetIndex = ASPECT_PRESETS.findIndex((a) => Math.abs(a.value - projector.aspect) < 1e-6);
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-sm font-semibold text-white">Box (metres)</h2>
@@ -57,6 +59,23 @@ export function SimControls({ box, projector, onBox, onProjector }: Props) {
       <Slider label="Side angle" value={projector.azimuthDeg} min={-180} max={180} step={1} unit="°" onChange={(v) => setP({ azimuthDeg: v })} />
       <Slider label="Lens height" value={projector.height} min={0} max={4} step={0.05} onChange={(v) => setP({ height: v })} />
       <Slider label="Throw ratio" value={projector.throwRatio} min={0.4} max={3} step={0.05} onChange={(v) => setP({ throwRatio: v })} />
+      <label className="flex items-center gap-2 text-xs">
+        <span className="w-24 shrink-0 text-zinc-300">Image shape</span>
+        <select
+          className="flex-1 rounded bg-zinc-800 px-2 py-1 text-zinc-100"
+          value={presetIndex >= 0 ? presetIndex : 0}
+          onChange={(e) => {
+            const preset = ASPECT_PRESETS[Number(e.target.value)];
+            if (preset) setP({ aspect: preset.value });
+          }}
+        >
+          {ASPECT_PRESETS.map((a, i) => (
+            <option key={a.label} value={i}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <Slider label="Lens shift" value={projector.shiftY} min={-0.5} max={0.5} step={0.01} onChange={(v) => setP({ shiftY: v })} />
     </div>
   );

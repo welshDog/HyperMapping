@@ -25,6 +25,7 @@ export function SimApp() {
   const [mode, setMode] = useState<Mode>('app');
   const [note, setNote] = useState<string | null>(null);
   const sceneRef = useRef<SimScene | null>(null);
+  const pendingSend = useRef<number | null>(null);
 
   const solve = useMemo(() => solveFaces(box, projector), [box, projector]);
   const solvedSurfaces = useMemo(() => toSurfaces(solve), [solve]);
@@ -66,15 +67,31 @@ export function SimApp() {
   rendererRef.current = renderer;
   const onAppSurfaces = useCallback((s: Surface[]) => {
     appSurfaces.current = s;
+    if (pendingSend.current !== null) {
+      // The main app answered our layout message with its new faces: only now do we know the send
+      // worked, so only now follow the app again (and without a frame of the old layout).
+      window.clearTimeout(pendingSend.current);
+      pendingSend.current = null;
+      rendererRef.current?.setSurfaces(s); // modeRef is stale until the next render
+      setMode('app');
+      setNote('The main app now uses this layout (nudge the pins to fine-tune).');
+      return;
+    }
     if (modeRef.current === 'app') rendererRef.current?.setSurfaces(s);
   }, []);
-  useOutputFeed(renderer, onAppSurfaces);
+  const { resumeVideo } = useOutputFeed(renderer, onAppSurfaces);
+
+  const cancelPendingSend = () => {
+    if (pendingSend.current !== null) window.clearTimeout(pendingSend.current);
+    pendingSend.current = null;
+  };
+  useEffect(() => cancelPendingSend, []);
 
   // Which layout the projector image shows: the app's, or the one we just computed.
   useEffect(() => {
     if (!renderer) return;
     if (mode === 'solved') {
-      if (solvedSurfaces.length) renderer.setSurfaces(solvedSurfaces);
+      renderer.setSurfaces(solvedSurfaces); // an empty list clears to black: never leave a stale picture
     } else {
       renderer.setSurfaces(appSurfaces.current);
     }
@@ -105,12 +122,17 @@ export function SimApp() {
     const ch = new BroadcastChannel(CHANNEL);
     ch.postMessage({ type: 'layout', surfaces: solvedSurfaces });
     ch.close();
-    setMode('app'); // the app echoes its new faces back, so we follow it again
-    setNote('Sent. The main app tab now uses this layout (nudge the pins to fine-tune).');
+    // Do not claim success or switch layout yet: the mode flips only when the app echoes its faces.
+    setNote('Sending…');
+    cancelPendingSend();
+    pendingSend.current = window.setTimeout(() => {
+      pendingSend.current = null;
+      setNote('No main app tab answered. Open the main app and press Send again.');
+    }, 1500);
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-zinc-950 text-white md:flex-row">
+    <div className="fixed inset-0 flex flex-col bg-zinc-950 text-white md:flex-row" onPointerDown={resumeVideo}>
       <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" />
       <aside className="max-h-[45%] w-full shrink-0 overflow-auto border-t border-zinc-800 p-4 md:max-h-none md:w-80 md:border-l md:border-t-0">
         <h1 className="mb-1 text-base font-semibold">Virtual projector</h1>
@@ -119,7 +141,7 @@ export function SimApp() {
         </p>
         {error && <p className="mb-2 text-xs text-amber-400">{error}</p>}
         <div className="mb-3 flex flex-wrap gap-2">
-          <button className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-black" onClick={() => { setMode('solved'); setNote(null); }}>
+          <button className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-black" onClick={() => { cancelPendingSend(); setMode('solved'); setNote(null); }}>
             Solve
           </button>
           <button
@@ -129,7 +151,7 @@ export function SimApp() {
           >
             Send to app
           </button>
-          <button className="rounded-lg bg-zinc-700 px-3 py-2 text-sm disabled:opacity-40" disabled={mode === 'app'} onClick={() => setMode('app')}>
+          <button className="rounded-lg bg-zinc-700 px-3 py-2 text-sm disabled:opacity-40" disabled={mode === 'app'} onClick={() => { cancelPendingSend(); setMode('app'); setNote(null); }}>
             Show app layout
           </button>
         </div>

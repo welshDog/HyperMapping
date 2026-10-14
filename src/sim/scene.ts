@@ -28,7 +28,7 @@ export class SimScene {
     private readonly texture: THREE.Texture,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     host.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = 'block';
     this.scene.background = new THREE.Color(0x111114);

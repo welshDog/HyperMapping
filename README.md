@@ -31,7 +31,11 @@ then open `https://localhost:5173`.
 - Open `/simulator.html` (for example `https://localhost:5173/simulator.html`) in another tab while the main app is open and a video is loaded. It shows a 3D box with your real output projected onto it from a virtual projector; drag to orbit.
 - Set the box size and turn, and the projector's distance, side angle, lens height, throw ratio (from its spec sheet) and lens shift.
 - **Solve** computes each visible face's four pins from those numbers and previews the video wrapped on the box. **Send to app** replaces the main app's faces with them, so you start from a good layout and only nudge the pins.
-- It is a starting point built from measurements: tape-measure error, the projector's real lens shift and your screen's shape (the simulator assumes a 16:9 projector image) will still need small pin adjustments.
+- Treat the result as a starting point built from measurements; tape-measure error means you will still nudge the pins. Some things decide whether the pins are physically right at all:
+  - The pins are only right when the app's output fills the projector image: open the Output window fullscreen on the projector, or mirror a screen whose shape matches the projector.
+  - The simulator assumes the projector image shape chosen in the Image shape dropdown (16:9 by default). A phone wider than 16:9 (for example 19.5:9) mirrored to a 16:9 projector is letterboxed, so choose that phone's shape in Image shape or every pin will be off vertically.
+  - The main app's own browser window is not the projector's shape, so its pins may look stretched there while the numbers are correct.
+  - Lens shift: the model aims the lens axis at the box centre. Many cheap projectors have a fixed throw offset and are tilted instead, so leave Lens shift at 0 unless the axis really points at the box.
 
 ## Known limits (M1)
 
