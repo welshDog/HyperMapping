@@ -38,6 +38,7 @@ export function Editor() {
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [setupsOpen, setSetupsOpen] = useState(false);
+  const dragBaseRef = useRef<Surface[] | null>(null);
   const [glue, setGlue] = useState(true); // pins on the same spot move together and snap; not saved
   const [notice, setNotice] = useState<string | null>(null);
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
@@ -137,10 +138,17 @@ export function Editor() {
   /**
    * A pin of the selected face was dragged. With Glue on, pins glued to it (same spot, any face) move
    * with it and it snaps onto a nearby pin of another face; a move that would break any face is refused.
+   *
+   * Every move of a drag is computed from the layout as it was when the drag STARTED, not from the
+   * previous move's result: the snap then holds while the pointer is inside the radius and releases
+   * when it leaves, the target pin is never dragged along by a fly-by (once snapped it would count as
+   * glued), and toggling Glue mid-drag returns partners to their start positions. A refused move
+   * returns false, so the pin stays at its last accepted spot. Accepted rare case: a layout change
+   * from elsewhere during a drag (e.g. a simulator `layout` message) is overwritten by the next move.
    */
   const onPinMove = useCallback(
     (ref: PinRef, p: Vec2, size: { w: number; h: number }) => {
-      const next = moveGluedPin(surfacesRef.current, ref, p, { glue, radiusPx: SNAP_RADIUS_PX, size });
+      const next = moveGluedPin(dragBaseRef.current ?? surfacesRef.current, ref, p, { glue, radiusPx: SNAP_RADIUS_PX, size });
       if (!next) return false;
       publish(next);
       return true;
@@ -253,6 +261,12 @@ export function Editor() {
           surfacesRef={surfacesRef}
           selectedId={selectedId}
           onPinMove={onPinMove}
+          onPinDragStart={() => {
+            dragBaseRef.current = surfacesRef.current;
+          }}
+          onPinDragEnd={() => {
+            dragBaseRef.current = null;
+          }}
           repaintSignal={repaint}
         />
       )}
@@ -286,7 +300,7 @@ export function Editor() {
           </button>
           <button
             aria-pressed={glue}
-            className={`rounded-lg px-4 py-3 ${glue ? 'bg-cyan-500 font-medium text-black' : 'bg-zinc-700'}`}
+            className={`rounded-lg px-4 py-3 font-medium min-w-[7.5rem] ${glue ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
             onClick={() => setGlue((g) => !g)}
           >
             Glue: {glue ? 'on' : 'off'}

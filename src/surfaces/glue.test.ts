@@ -160,6 +160,25 @@ describe('moveGluedPin', () => {
   it('Glue on: with no snap target a refused move is not retried (still null)', () => {
     expect(moveGluedPin([A, B, C], pin('a', 'tr'), [1.2, 0.2], opts(true))).toBeNull();
   });
+  it('computing every move of a drag from the drag-start list keeps the snap exact and never drags the target', () => {
+    const base = [A, B, C];
+    const o = opts(true);
+    const near: [number, number] = [0.6, 0.02]; // 10 px from c.tl (0.6, 0.0)
+    const far: [number, number] = [0.62, 0.1]; // 54 px from c.tl, all three faces stay valid
+    const snapped = moveGluedPin(base, pin('a', 'tr'), near, o)!;
+    for (const [id, c] of [['a', 'tr'], ['b', 'tl'], ['c', 'tl']] as const) {
+      expect(snapped.find((s) => s.id === id)!.corners[c]).toEqual([0.6, 0.0]);
+    }
+    const away = moveGluedPin(base, pin('a', 'tr'), far, o)!;
+    expect(away.find((s) => s.id === 'c')!.corners.tl).toEqual([0.6, 0.0]); // C is back where it was
+    expect(away.find((s) => s.id === 'a')!.corners.tr).toEqual(far);
+    expect(away.find((s) => s.id === 'b')!.corners.tl).toEqual(far);
+    const again = moveGluedPin(base, pin('a', 'tr'), near, o)!;
+    expect(again.find((s) => s.id === 'a')!.corners.tr).toEqual([0.6, 0.0]);
+    // the bug the UI avoids: starting from the already-snapped RESULT, C.tl is glued and gets dragged along
+    const bad = moveGluedPin(snapped, pin('a', 'tr'), far, o)!;
+    expect(bad.find((s) => s.id === 'c')!.corners.tl).toEqual(far);
+  });
   it('a single face with no partners moves just that pin, as before', () => {
     const out = moveGluedPin([A], pin('a', 'tr'), [0.45, 0.25], opts(true))!;
     expect(out[0].corners.tr).toEqual([0.45, 0.25]);

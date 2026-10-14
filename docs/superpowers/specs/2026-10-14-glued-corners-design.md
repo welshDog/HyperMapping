@@ -12,7 +12,7 @@ Two pins on different faces are **glued** when they sit on the same spot: both c
 
 ## Behaviour while dragging a pin (Glue ON, the default)
 - Every pin glued to the dragged one moves with it, on any face (a box corner shared by three faces moves all three).
-- **Magnet:** when the dragged group comes within `SNAP_RADIUS_PX = 24` screen pixels of a pin on a *different, unglued* face, it snaps exactly onto that pin. The two groups are then one glued group (the next move carries both).
+- **Magnet:** when the dragged group comes within `SNAP_RADIUS_PX = 24` screen pixels of a pin on a *different, unglued* face, it snaps exactly onto that pin. Within a drag the snap holds while the pointer stays inside the radius and releases when it leaves (each move of a drag is computed from the layout at drag start, so merely passing a pin never drags it along). Letting go while snapped leaves the pins glued, so the NEXT drag carries both.
 - **All or nothing:** if the move would leave ANY affected face with an invalid quad (bow-tie, sliver, collapsed), the whole move is refused and nothing changes (pins are never pulled apart).
 - Faces not touched by the move keep their object identity (cheap diffing downstream).
 

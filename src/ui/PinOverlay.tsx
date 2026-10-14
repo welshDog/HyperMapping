@@ -13,6 +13,9 @@ interface Props {
    * pixel size, needed to measure snapping in pixels. Return true if the move was accepted.
    */
   onPinMove: (ref: PinRef, p: Vec2, size: { w: number; h: number }) => boolean;
+  /** A pin drag began / ended (also on cancel, or when the selection changes mid-drag). */
+  onPinDragStart?: () => void;
+  onPinDragEnd?: () => void;
   /** Bump to repaint after surfacesRef was changed from outside (e.g. "Reset corners"). */
   repaintSignal?: number;
 }
@@ -23,7 +26,7 @@ interface Props {
  * glued to another. Positions are painted by mutating SVG attributes directly: a pointermove never
  * causes a React render.
  */
-export function PinOverlay({ surfacesRef, selectedId, onPinMove, repaintSignal }: Props) {
+export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart, onPinDragEnd, repaintSignal }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const circles = useRef<Partial<Record<CornerKey, SVGCircleElement | null>>>({});
   const rings = useRef<Partial<Record<CornerKey, SVGCircleElement | null>>>({});
@@ -81,13 +84,18 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, repaintSignal }
 
   // A second finger changing the selection mid-drag must not leave a stale drag behind.
   useEffect(() => {
-    dragging.current = null;
+    if (dragging.current !== null) {
+      dragging.current = null;
+      onPinDragEnd?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a selection change should end a drag
   }, [selectedId]);
 
   const onDown = (corner: CornerKey) => (e: PointerEvent<SVGCircleElement>) => {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragging.current = corner;
+    onPinDragStart?.();
   };
 
   const onMove = (corner: CornerKey) => (e: PointerEvent<SVGCircleElement>) => {
@@ -99,6 +107,7 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, repaintSignal }
 
   const onUp = (e: PointerEvent<SVGCircleElement>) => {
     dragging.current = null;
+    onPinDragEnd?.();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
