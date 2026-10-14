@@ -1,3 +1,5 @@
+import { Editor } from './ui/Editor';
+
 export function App() {
-  return <div className="p-4 text-white">HyperMapping</div>;
+  return <Editor />;
 }
