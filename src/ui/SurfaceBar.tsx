@@ -7,10 +7,11 @@ interface Props {
   onSelect: (id: string) => void;
   onAdd: () => void;
   onDelete: () => void;
+  onEditSlice: () => void;
 }
 
 /** One tab per face (in that face's colour), plus add and delete. */
-export function SurfaceBar({ surfaces, selectedId, onSelect, onAdd, onDelete }: Props) {
+export function SurfaceBar({ surfaces, selectedId, onSelect, onAdd, onDelete, onEditSlice }: Props) {
   return (
     <div className="flex w-full flex-wrap items-center gap-2">
       {surfaces.map((s, i) => {
@@ -39,6 +40,9 @@ export function SurfaceBar({ surfaces, selectedId, onSelect, onAdd, onDelete }: 
         onClick={onDelete}
       >
         Delete
+      </button>
+      <button className="rounded-lg bg-zinc-700 px-3 py-2 text-xs" onClick={onEditSlice}>
+        Edit slice
       </button>
     </div>
   );

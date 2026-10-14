@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
-import { addSurface, defaultCorners, removeSurface, selectAfterRemove } from '../surfaces/model';
-import { FULL_RECT, type Surface } from '../surfaces/types';
+import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
+import { FULL_RECT, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import type { Corners } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
+import { SliceEditor } from './SliceEditor';
 import { SurfaceBar } from './SurfaceBar';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
@@ -26,6 +27,7 @@ export function Editor() {
   const videoRef = useRef<VideoHandle | null>(null);
   const blobRef = useRef<Blob | null>(null);
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
+  const [sliceMode, setSliceMode] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
@@ -116,6 +118,17 @@ export function Editor() {
     bump();
   };
 
+  const onSliceChange = (id: string, rect: SrcRect) => {
+    if (!isValidSrcRect(rect)) return;
+    publish(surfacesRef.current.map((s) => (s.id === id ? { ...s, srcRect: rect } : s)));
+    bump(); // the slice panel is a small tree; re-rendering it per move is fine
+  };
+
+  const videoAspect = (() => {
+    const v = videoRef.current?.video;
+    return v && v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9;
+  })();
+
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -184,6 +197,7 @@ export function Editor() {
             }}
             onAdd={addFace}
             onDelete={deleteFace}
+            onEditSlice={() => setSliceMode(true)}
           />
           <label
             className={`rounded-lg px-4 py-3 font-medium ${
@@ -212,6 +226,16 @@ export function Editor() {
           aria-label="Exit play mode"
           className="absolute left-0 top-0 z-20 h-16 w-16 opacity-0"
           onClick={exitPlay}
+        />
+      )}
+
+      {mode === 'edit' && sliceMode && (
+        <SliceEditor
+          surfaces={surfacesRef.current}
+          selectedId={selectedId}
+          videoAspect={videoAspect}
+          onChange={onSliceChange}
+          onClose={() => setSliceMode(false)}
         />
       )}
     </div>

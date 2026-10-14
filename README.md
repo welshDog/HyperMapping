@@ -15,10 +15,16 @@ then open `https://localhost:5173`.
 
 ## Use
 
-- **Load video** picks a file from the phone. **Drag the four pins** onto the corners of your surface.
+- **Load video** picks a file from the phone. **Drag the four pins** (for the selected face) onto the corners of your surface.
 - **Play mode** hides every control (tap the invisible top-left square to come back).
 - **Open output window** opens `#output` (desktop/tablet: drag it to the projector and click once for fullscreen).
 - `?renderer=webgl2` or `?renderer=webgpu` forces a backend.
+
+## Mapping a box (several faces)
+
+- **+ Face** adds another grid (up to 6). Each face has its own four pins; pick a face with its tab, then drag its pins onto that face of the box. **Delete** removes the selected face, **Reset corners** resets just that face.
+- All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a picture of the whole video where you drag the selected face's rectangle (drag the body to move it, a corner to resize it). New faces start as equal strips.
+- Play mode and the output window show every face.
 
 ## Known limits (M1)
 
