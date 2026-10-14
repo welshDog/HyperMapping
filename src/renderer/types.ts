@@ -1,5 +1,14 @@
 import type { Surface } from '../surfaces/types';
 
+/** Options a caller may pass when creating a renderer. */
+export interface RendererOptions {
+  /**
+   * WebGL2 only (WebGPU ignores it): keep the drawn picture readable after the frame, so another
+   * context (e.g. the simulator's three.js view) can sample the canvas at any time.
+   */
+  preserveDrawingBuffer?: boolean;
+}
+
 export interface Renderer {
   readonly kind: 'webgpu' | 'webgl2';
   /** Called with ms between drawn frames; wire to ThermalGuard. */

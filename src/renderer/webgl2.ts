@@ -2,7 +2,7 @@ import type { Surface } from '../surfaces/types';
 import { buildTopology } from '../warp/mesh';
 import { FrameLoop } from './frame-loop';
 import { SurfaceSync } from './surface-sync';
-import type { Renderer } from './types';
+import type { Renderer, RendererOptions } from './types';
 import { isVideoReady } from './video-ready';
 
 const VS = `#version 300 es
@@ -41,8 +41,13 @@ interface GlSurface {
   uvBuf: WebGLBuffer;
 }
 
-export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
-  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: RendererOptions = {}): Renderer {
+  const gl = canvas.getContext('webgl2', {
+    antialias: false,
+    alpha: false,
+    powerPreference: 'high-performance',
+    preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
+  });
   if (!gl) throw new Error('WebGL2 is not available');
 
   const program = gl.createProgram()!;

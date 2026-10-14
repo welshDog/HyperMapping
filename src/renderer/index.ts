@@ -1,9 +1,9 @@
 import { chooseBackends } from './backends';
-import type { Renderer } from './types';
+import type { Renderer, RendererOptions } from './types';
 import { createWebGL2Renderer } from './webgl2';
 import { createWebGPURenderer } from './webgpu';
 
-export type { Renderer } from './types';
+export type { Renderer, RendererOptions } from './types';
 export { ThermalGuard, type Quality } from './quality';
 export { computeBackingSize } from './fit';
 
@@ -14,12 +14,13 @@ export { computeBackingSize } from './fit';
 export async function createRenderer(
   canvas: HTMLCanvasElement,
   forced: string | null = new URLSearchParams(location.search).get('renderer'),
+  options: RendererOptions = {},
 ): Promise<Renderer> {
   const order = chooseBackends({ forced, hasWebGPU: 'gpu' in navigator });
   const errors: string[] = [];
   for (const backend of order) {
     try {
-      return backend === 'webgpu' ? await createWebGPURenderer(canvas) : createWebGL2Renderer(canvas);
+      return backend === 'webgpu' ? await createWebGPURenderer(canvas) : createWebGL2Renderer(canvas, options);
     } catch (e) {
       console.warn(`[hypermapping] ${backend} failed`, e);
       errors.push(`${backend}: ${e instanceof Error ? e.message : String(e)}`);
