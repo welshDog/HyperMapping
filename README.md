@@ -2,6 +2,13 @@
 
 Web-first projection mapping for phones. Milestone 1: four-corner perspective pin + local video.
 
+## Start it with one click (Windows)
+
+Double-click the **HyperMapping** shortcut on the Desktop (or `start-hypermapping.bat`). It builds the app only if the code changed since the last build, serves the finished files (light on memory), and opens the app and the simulator in your browser. It also prints the address to use on your phone. Close its window to stop. The shortcut was made by `create-desktop-shortcut.ps1` (run it again if you move the folder).
+
+- Add `-Dev` (`start-hypermapping.bat -Dev`) for the heavier dev server with live reload.
+- The self-signed certificate warning is expected: accept it once per browser.
+
 ## Run
 
     npm install
