@@ -52,6 +52,10 @@ export function Editor() {
       ch.postMessage({ type: 'state', corners: cornersRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
+    // An output window that was already open (e.g. this editor was reloaded) never sends
+    // a new hello, so push our state once now.
+    ch.postMessage({ type: 'state', corners: cornersRef.current });
+    if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
       channelRef.current = null;

@@ -43,9 +43,15 @@ export function Output() {
             next.dispose();
             return;
           }
+          try {
+            renderer.setVideo(next.video);
+          } catch (e) {
+            next.dispose(); // never leak a video the renderer refused
+            throw e;
+          }
+          // Swap only after the renderer holds the new video, so it never draws a disposed one.
           handleRef.current?.dispose();
           handleRef.current = next;
-          renderer.setVideo(next.video);
         } catch (e) {
           console.warn('[hypermapping] output could not load video', e);
         }
@@ -55,6 +61,7 @@ export function Output() {
 
     return () => {
       ch.close();
+      latest++; // a load still in flight is now stale: it disposes itself instead of being assigned
       handleRef.current?.dispose();
       handleRef.current = null;
       renderer.setVideo(null);
