@@ -1,6 +1,7 @@
-import { GRID, buildTopology, warpedPositions } from '../warp/mesh';
-import { UNIT_CORNERS, type Corners } from '../warp/types';
+import type { Surface } from '../surfaces/types';
+import { buildTopology } from '../warp/mesh';
 import { FrameLoop } from './frame-loop';
+import { SurfaceSync } from './surface-sync';
 import type { Renderer } from './types';
 import { isVideoReady } from './video-ready';
 
@@ -32,6 +33,12 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
     throw new Error(`Shader compile failed: ${log}`);
   }
   return s;
+}
+
+interface GlSurface {
+  vao: WebGLVertexArrayObject;
+  posBuf: WebGLBuffer;
+  uvBuf: WebGLBuffer;
 }
 
 export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
@@ -66,26 +73,38 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
   gl.useProgram(program);
 
   const topo = buildTopology();
-  const vao = gl.createVertexArray()!;
-  gl.bindVertexArray(vao);
-
-  const posBuf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, topo.vertexCount * 2 * 4, gl.DYNAMIC_DRAW);
   const aPos = gl.getAttribLocation(program, 'a_pos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
-  const uvBuf = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, topo.uvs, gl.STATIC_DRAW);
   const aUv = gl.getAttribLocation(program, 'a_uv');
-  gl.enableVertexAttribArray(aUv);
-  gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+  const surfaceBytes = topo.vertexCount * 2 * 4;
 
+  // One index buffer shared by every face; each face's VAO captures it.
   const idxBuf = gl.createBuffer()!;
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, topo.indices, gl.STATIC_DRAW);
+
+  const createSurface = (): GlSurface => {
+    const vao = gl.createVertexArray()!;
+    gl.bindVertexArray(vao);
+    const posBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, surfaceBytes, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    const uvBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, surfaceBytes, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(aUv);
+    gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.bindVertexArray(null);
+    return { vao, posBuf, uvBuf };
+  };
+
+  const freeSurface = (s: GlSurface) => {
+    gl.deleteVertexArray(s.vao);
+    gl.deleteBuffer(s.posBuf);
+    gl.deleteBuffer(s.uvBuf);
+  };
 
   const tex = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -95,32 +114,54 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.uniform1i(gl.getUniformLocation(program, 'u_tex'), 0);
 
-  const positions = new Float32Array(topo.vertexCount * 2);
-  let dirty = false;
+  const sync = new SurfaceSync();
+  const surfaces = new Map<string, GlSurface>();
+  let order: string[] = [];
   let destroyed = false;
   let video: HTMLVideoElement | null = null;
 
-  const setCorners = (c: Corners) => {
-    if (warpedPositions(c, GRID, GRID, positions)) dirty = true; // invalid quad: keep previous
+  const setSurfaces = (list: Surface[]) => {
+    if (destroyed) return;
+    const r = sync.sync(list);
+    for (const id of r.removed) {
+      const s = surfaces.get(id);
+      if (s) freeSurface(s);
+      surfaces.delete(id);
+    }
+    for (const id of r.created) surfaces.set(id, createSurface());
+    for (const id of r.changedPositions) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (!g || !b) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.posBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.positions);
+    }
+    for (const id of r.changedUvs) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (!g || !b) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.uvBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.uvs);
+    }
+    order = r.order;
   };
-  setCorners(UNIT_CORNERS);
 
   const draw = () => {
     if (destroyed) return;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.bindVertexArray(vao);
-    if (dirty) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
-      dirty = false;
-    }
     if (!video || !isVideoReady(video)) return;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-    gl.drawElements(gl.TRIANGLES, topo.indices.length, gl.UNSIGNED_SHORT, 0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video); // once per frame, shared by all faces
+    for (const id of order) {
+      const g = surfaces.get(id);
+      if (!g) continue;
+      gl.bindVertexArray(g.vao);
+      gl.drawElements(gl.TRIANGLES, topo.indices.length, gl.UNSIGNED_SHORT, 0);
+    }
+    gl.bindVertexArray(null);
   };
 
   const loop = new FrameLoop({ draw, onFrameTime: (ms) => renderer.onFrameTime?.(ms) });
@@ -128,7 +169,7 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
   const renderer: Renderer = {
     kind: 'webgl2',
     onFrameTime: null,
-    setCorners,
+    setSurfaces,
     setVideo: (v) => {
       video = v;
     },
@@ -144,11 +185,10 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
       if (destroyed) return;
       destroyed = true;
       loop.stop();
+      for (const s of surfaces.values()) freeSurface(s);
+      surfaces.clear();
       gl.deleteTexture(tex);
-      gl.deleteBuffer(posBuf);
-      gl.deleteBuffer(uvBuf);
       gl.deleteBuffer(idxBuf);
-      gl.deleteVertexArray(vao);
       gl.deleteProgram(program);
     },
   };

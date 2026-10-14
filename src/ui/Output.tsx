@@ -34,8 +34,7 @@ export function Output() {
       const msg = parseMsg(ev.data);
       if (!msg) return;
       if (msg.type === 'surfaces') {
-        const first = msg.surfaces[0]; // transitional: the renderer takes one quad until Task 4
-        if (first) renderer.setCorners(first.corners);
+        renderer.setSurfaces(msg.surfaces);
       } else if (msg.type === 'video') {
         const mine = ++latest;
         try {

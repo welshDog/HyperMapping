@@ -1,6 +1,7 @@
-import { GRID, buildTopology, warpedPositions } from '../warp/mesh';
-import { UNIT_CORNERS, type Corners } from '../warp/types';
+import type { Surface } from '../surfaces/types';
+import { buildTopology } from '../warp/mesh';
 import { FrameLoop } from './frame-loop';
+import { SurfaceSync } from './surface-sync';
 import type { Renderer } from './types';
 import { isVideoReady } from './video-ready';
 
@@ -27,6 +28,11 @@ fn fs(in: VSOut) -> @location(0) vec4f {
 }
 `;
 
+interface GpuSurface {
+  posBuf: GPUBuffer;
+  uvBuf: GPUBuffer;
+}
+
 export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<Renderer> {
   if (!navigator.gpu) throw new Error('WebGPU is not available');
   // Everything that can fail (device, shader, pipeline) happens BEFORE touching
@@ -43,11 +49,9 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
 
   const format = navigator.gpu.getPreferredCanvasFormat(); // needs no canvas
   const topo = buildTopology();
-  const positions = new Float32Array(topo.vertexCount * 2);
+  const surfaceBytes = topo.vertexCount * 2 * 4;
   let pipeline: GPURenderPipeline;
   let sampler: GPUSampler;
-  let posBuf: GPUBuffer;
-  let uvBuf: GPUBuffer;
   let idxBuf: GPUBuffer;
   let ctx: GPUCanvasContext;
   try {
@@ -72,22 +76,12 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     });
     sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
-    posBuf = device.createBuffer({
-      label: 'warp positions',
-      size: positions.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    uvBuf = device.createBuffer({
-      label: 'warp uvs',
-      size: topo.uvs.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
+    // One index buffer shared by every face.
     idxBuf = device.createBuffer({
       label: 'warp indices',
       size: topo.indices.byteLength, // 4800 bytes, a multiple of 4
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(uvBuf, 0, topo.uvs as Float32Array<ArrayBuffer>);
     device.queue.writeBuffer(idxBuf, 0, topo.indices as Uint16Array<ArrayBuffer>);
 
     // Only now claim the canvas.
@@ -100,21 +94,54 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     throw e;
   }
 
-  let dirty = false;
+  const sync = new SurfaceSync();
+  const surfaces = new Map<string, GpuSurface>();
+  let order: string[] = [];
   let destroyed = false;
   let video: HTMLVideoElement | null = null;
 
-  const setCorners = (c: Corners) => {
-    if (warpedPositions(c, GRID, GRID, positions)) dirty = true; // invalid quad: keep previous
+  const createSurface = (id: string): GpuSurface => ({
+    posBuf: device.createBuffer({
+      label: `face ${id} positions`,
+      size: surfaceBytes,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    }),
+    uvBuf: device.createBuffer({
+      label: `face ${id} uvs`,
+      size: surfaceBytes,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    }),
+  });
+
+  const freeSurface = (s: GpuSurface) => {
+    s.posBuf.destroy();
+    s.uvBuf.destroy();
   };
-  setCorners(UNIT_CORNERS);
+
+  const setSurfaces = (list: Surface[]) => {
+    if (destroyed) return;
+    const r = sync.sync(list);
+    for (const id of r.removed) {
+      const s = surfaces.get(id);
+      if (s) freeSurface(s);
+      surfaces.delete(id);
+    }
+    for (const id of r.created) surfaces.set(id, createSurface(id));
+    for (const id of r.changedPositions) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (g && b) device.queue.writeBuffer(g.posBuf, 0, b.positions);
+    }
+    for (const id of r.changedUvs) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (g && b) device.queue.writeBuffer(g.uvBuf, 0, b.uvs);
+    }
+    order = r.order;
+  };
 
   const draw = () => {
     if (destroyed) return;
-    if (dirty) {
-      device.queue.writeBuffer(posBuf, 0, positions);
-      dirty = false;
-    }
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -127,7 +154,8 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
       ],
     });
     if (video && isVideoReady(video)) {
-      // External textures are valid for one frame, so the bind group is rebuilt each draw.
+      // External textures are valid for one frame, so the bind group is rebuilt each draw
+      // (once per frame, shared by all faces).
       const bindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
         entries: [
@@ -137,10 +165,14 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
       });
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, bindGroup);
-      pass.setVertexBuffer(0, posBuf);
-      pass.setVertexBuffer(1, uvBuf);
       pass.setIndexBuffer(idxBuf, 'uint16');
-      pass.drawIndexed(topo.indices.length);
+      for (const id of order) {
+        const g = surfaces.get(id);
+        if (!g) continue;
+        pass.setVertexBuffer(0, g.posBuf);
+        pass.setVertexBuffer(1, g.uvBuf);
+        pass.drawIndexed(topo.indices.length);
+      }
     }
     pass.end();
     device.queue.submit([encoder.finish()]);
@@ -151,7 +183,7 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
   renderer = {
     kind: 'webgpu',
     onFrameTime: null,
-    setCorners,
+    setSurfaces,
     setVideo: (v) => {
       video = v;
     },
@@ -164,11 +196,11 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     stop: () => loop.stop(),
     destroy: () => {
       if (destroyed) return;
-      destroyed = true; // draw()/start() are no-ops from here on
+      destroyed = true; // draw()/start()/setSurfaces() are no-ops from here on
       loop.stop(); // stop the render loop BEFORE anything is torn down
       try {
-        posBuf.destroy();
-        uvBuf.destroy();
+        for (const s of surfaces.values()) freeSurface(s);
+        surfaces.clear();
         idxBuf.destroy();
         ctx.unconfigure();
         device.destroy(); // device.lost then fires with reason 'destroyed' (ignored above)

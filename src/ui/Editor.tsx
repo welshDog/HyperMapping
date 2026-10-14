@@ -27,7 +27,7 @@ export function Editor() {
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
   useEffect(() => {
-    renderer?.setCorners(cornersRef.current);
+    renderer?.setSurfaces(toSurfaces(cornersRef.current));
   }, [renderer]);
 
   // Autoplay can be refused, and backgrounding pauses the video: a paused video
@@ -70,7 +70,7 @@ export function Editor() {
     (next: Corners) => {
       if (!isValidQuad(next)) return false;
       cornersRef.current = next;
-      renderer?.setCorners(next);
+      renderer?.setSurfaces(toSurfaces(next));
       channelRef.current?.postMessage({ type: 'surfaces', surfaces: toSurfaces(next) });
       return true;
     },
