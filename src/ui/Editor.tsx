@@ -73,6 +73,18 @@ export function Editor() {
     }
   };
 
+  // Called from the button's click (a user gesture), which fullscreen requires.
+  const enterPlay = () => {
+    setMode('play');
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  };
+
+  // Leaving fullscreen by a system gesture keeps Play mode; only this button leaves it.
+  const exitPlay = () => {
+    setMode('edit');
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  };
+
   const openOutput = () => {
     window.open(`${location.pathname}#output`, 'hypermapping-output', 'popup,width=960,height=540');
   };
@@ -95,7 +107,7 @@ export function Editor() {
             Load video
             <input type="file" accept="video/*" className="hidden" disabled={!renderer} onChange={onFile} />
           </label>
-          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={() => setMode('play')}>
+          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={enterPlay}>
             Play mode
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={resetCorners}>
@@ -113,7 +125,7 @@ export function Editor() {
         <button
           aria-label="Exit play mode"
           className="absolute left-0 top-0 z-20 h-16 w-16 opacity-0"
-          onClick={() => setMode('edit')}
+          onClick={exitPlay}
         />
       )}
     </div>

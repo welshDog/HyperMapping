@@ -24,6 +24,8 @@ then open `https://localhost:5173`.
 
 - A phone cannot use the output window as a second screen; it opens a tab. For a phone plugged into a
   projector over USB-C/HDMI, use Play mode (screen mirror). True extended display needs the native shell (later milestone).
+- iPhone Safari cannot make a non-video element fullscreen, so Play mode stays inside the browser
+  chrome there. Use Share > Add to Home Screen and launch from the icon instead (the manifest is fullscreen).
 - No saving yet (Milestone 2).
 
 ## Verification status
