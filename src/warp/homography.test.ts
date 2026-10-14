@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeHomography, applyHomography } from './homography';
+import { computeHomography, applyHomography, applyHomographyChecked } from './homography';
 import type { Vec2 } from './types';
 
 const SQ: Vec2[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
@@ -42,5 +42,31 @@ describe('computeHomography', () => {
 
   it('returns null when a destination coordinate is Infinity', () => {
     expect(computeHomography(SQ, [[0, 0], [1, 0], [Infinity, 1], [0, 1]])).toBeNull();
+  });
+});
+
+describe('applyHomographyChecked', () => {
+  it('equals applyHomography on a valid homography', () => {
+    const h = computeHomography(SQ, TRAP)!;
+    for (const p of [[0, 0], [0.3, 0.7], [1, 1]] as Vec2[]) {
+      expect(applyHomographyChecked(h, p)).toEqual(applyHomography(h, p));
+    }
+  });
+
+  it('returns null when the denominator w is 0 at the query point', () => {
+    const h = [1, 0, 0, 0, 1, 0, 1, 0, 0];
+    expect(applyHomographyChecked(h, [0, 0])).toBeNull();
+  });
+
+  it('returns null when w is tiny (|w| < 1e-12)', () => {
+    const h = [1, 0, 0, 0, 1, 0, 0, 0, 1e-13];
+    expect(applyHomographyChecked(h, [1, 1])).toBeNull();
+  });
+
+  it('returns null when w or the result is non-finite', () => {
+    expect(applyHomographyChecked([1, 0, 0, 0, 1, 0, 0, 0, NaN], [1, 1])).toBeNull();
+    expect(applyHomographyChecked([1, 0, 0, 0, 1, 0, 0, 0, Infinity], [1, 1])).toBeNull();
+    expect(applyHomographyChecked([Infinity, 0, 0, 0, 1, 0, 0, 0, 1], [1, 1])).toBeNull();
+    expect(applyHomographyChecked([1, 0, 0, 0, 1, 0, 0, 0, 1], [NaN, 0])).toBeNull();
   });
 });

@@ -39,11 +39,21 @@ function solve8(m: number[][]): number[] | null {
   return out.every(Number.isFinite) ? out : null;
 }
 
-/**
- * Precondition: `h` must come from a quad that passed `isValidQuad`. Otherwise
- * w can change sign or hit 0 across the source square and results can be Infinity.
- */
+// TODO(multi-surface/bezier): PRECONDITION. `h` MUST come from a quad that passed
+// `isValidQuad`. Any new caller (bezier mask, multi-layer) must validate with
+// `isValidQuad` first; otherwise w = h6*x + h7*y + h8 can hit 0 or change sign
+// across the source square and the result is Infinity/NaN. This function is the
+// unchecked hot path (mesh warping); use `applyHomographyChecked` when unsure.
 export function applyHomography(h: Mat3, [x, y]: Vec2): Vec2 {
   const w = h[6] * x + h[7] * y + h[8];
   return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];
+}
+
+/** Like `applyHomography` but returns null if w is non-finite or ~0, or the result is non-finite. */
+export function applyHomographyChecked(h: Mat3, [x, y]: Vec2): Vec2 | null {
+  const w = h[6] * x + h[7] * y + h[8];
+  if (!Number.isFinite(w) || Math.abs(w) < 1e-12) return null;
+  const u = (h[0] * x + h[1] * y + h[2]) / w;
+  const v = (h[3] * x + h[4] * y + h[5]) / w;
+  return Number.isFinite(u) && Number.isFinite(v) ? [u, v] : null;
 }
