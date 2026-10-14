@@ -71,7 +71,7 @@ export function SimApp() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-zinc-950 text-white md:flex-row">
-      <div ref={hostRef} className="relative min-h-0 flex-1" />
+      <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" />
       <aside className="max-h-[45%] w-full shrink-0 overflow-auto border-t border-zinc-800 p-4 md:max-h-none md:w-80 md:border-l md:border-t-0">
         <h1 className="mb-1 text-base font-semibold">Virtual projector</h1>
         <p className="mb-3 text-xs text-zinc-400">

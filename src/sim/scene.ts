@@ -14,6 +14,7 @@ export class SimScene {
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
   private readonly controls: OrbitControls;
   private readonly material: THREE.ShaderMaterial;
+  private readonly grid: THREE.GridHelper;
   private readonly boxMesh: THREE.Mesh;
   private readonly boxEdges: THREE.LineSegments;
   private readonly marker: THREE.Mesh;
@@ -29,6 +30,7 @@ export class SimScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     host.appendChild(this.renderer.domElement);
+    this.renderer.domElement.style.display = 'block';
     this.scene.background = new THREE.Color(0x111114);
 
     this.camera.position.set(4, 3, 5);
@@ -36,7 +38,8 @@ export class SimScene {
     this.controls.target.set(0, 0.5, 0);
     this.controls.update();
 
-    this.scene.add(new THREE.GridHelper(10, 20, 0x444450, 0x2a2a32));
+    this.grid = new THREE.GridHelper(10, 20, 0x444450, 0x2a2a32);
+    this.scene.add(this.grid);
 
     this.material = createProjectiveMaterial(texture);
     this.boxMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.material);
@@ -127,6 +130,10 @@ export class SimScene {
     (this.marker.material as THREE.Material).dispose();
     this.frustum.geometry.dispose();
     (this.frustum.material as THREE.Material).dispose();
+    this.grid.geometry.dispose();
+    const gridMat = this.grid.material;
+    if (Array.isArray(gridMat)) gridMat.forEach((m) => m.dispose());
+    else gridMat.dispose();
     this.material.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
