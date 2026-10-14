@@ -151,6 +151,19 @@ export interface PatternSource {
  * when the browser cannot do that, in which case the app simply stays black until a video loads.
  */
 export function createPatternSource(): PatternSource | null {
+  let stream: MediaStream | null = null;
+  let video: HTMLVideoElement | null = null;
+  let timer: number | null = null;
+  const release = () => {
+    if (timer !== null) window.clearInterval(timer);
+    timer = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    }
+  };
   try {
     const canvas = document.createElement('canvas');
     canvas.width = PATTERN_WIDTH;
@@ -160,39 +173,36 @@ export function createPatternSource(): PatternSource | null {
 
     let tick = 0;
     drawTestPattern(ctx, PATTERN_WIDTH, PATTERN_HEIGHT, tick);
-    const stream = canvas.captureStream(10);
+    stream = canvas.captureStream(10);
 
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.setAttribute('playsinline', '');
-    video.style.cssText = HIDDEN_STYLE;
-    video.srcObject = stream;
-    document.body.appendChild(video);
+    const el = document.createElement('video');
+    video = el;
+    el.muted = true;
+    el.playsInline = true;
+    el.setAttribute('playsinline', '');
+    el.style.cssText = HIDDEN_STYLE;
+    el.srcObject = stream;
+    document.body.appendChild(el);
 
     const ensurePlaying = () => {
-      if (video.paused) video.play().catch(() => {});
+      if (el.paused) el.play()?.catch(() => {});
     };
     ensurePlaying();
 
     // Redrawing (the dot toggles) keeps frames flowing through the stream.
-    const timer = window.setInterval(() => {
-      tick += 1;
-      drawTestPattern(ctx, PATTERN_WIDTH, PATTERN_HEIGHT, tick);
+    timer = window.setInterval(() => {
+      try {
+        tick += 1;
+        drawTestPattern(ctx, PATTERN_WIDTH, PATTERN_HEIGHT, tick);
+      } catch {
+        if (timer !== null) window.clearInterval(timer);
+        timer = null;
+      }
     }, TICK_MS);
 
-    return {
-      video,
-      ensurePlaying,
-      dispose() {
-        window.clearInterval(timer);
-        stream.getTracks().forEach((track) => track.stop());
-        video.pause();
-        video.srcObject = null;
-        video.remove();
-      },
-    };
+    return { video: el, ensurePlaying, dispose: release };
   } catch {
+    release();
     return null;
   }
 }
