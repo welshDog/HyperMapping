@@ -1,0 +1,9 @@
+{
+  "name": "HyperMapping",
+  "short_name": "HyperMapping",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

@@ -1,0 +1,13 @@
+The golden rule for building a low-latency projection mapping engine is to keep the heavy lifting strictly on the GPU. While web technologies like SVG and pure JavaScript are fantastic for building the control dashboard, they will bottleneck quickly if forced to render and warp 4K video at 60fps.
+
+To achieve smooth playback and instant mesh manipulation, the architecture should strictly decouple the user interface from the rendering pipeline.
+
+Hardware-Accelerated Decoding: Never decode video on the CPU. The engine must utilize hardware decoders (like NVDEC/CUVID on Nvidia, or V4L2/MMAL on single-board computers like a Raspberry Pi) to read the video file and pass the frames directly to the GPU's memory as textures, bypassing the system RAM whenever possible.
+
+The WebGL / OpenGL Layer: The actual "warping" should happen in a graphics API (OpenGL, Vulkan, or WebGL). The video frame is applied as a texture onto a 2D geometric mesh. When the user drags a corner pin in your dashboard, they are just updating the vertex coordinates of that mesh. The GPU's geometry shader recalculates the distortion instantly.
+
+Headless Rendering for Hardware Clusters: If you plan to run this on dedicated hardware boxes or server clusters, write the renderer in C++ (using OpenGL/Vulkan) or use hardware-accelerated Python wrappers (like Vispy) running in headless mode (KMS/DRM). This skips the overhead of a desktop environment (like X11 or Wayland), pushing raw frames directly to the projector output.
+
+State Synchronization (The Bridge): Your Flask or React backend manages the state. When a node is moved on the UI, the backend sends a tiny JSON payload (the new X/Y coordinates) via WebSockets or UDP to the rendering engine. The engine updates the vertex shader on the next frame.
+
+Here is a breakdown of how the GPU pipeline handles the mesh warping process frame-by-frame:

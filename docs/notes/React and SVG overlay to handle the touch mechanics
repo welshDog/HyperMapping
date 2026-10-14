@@ -1,0 +1,97 @@
+To keep the interface highly responsive and prevent React's render cycle from bottlenecking the 60fps GPU output, the touch interface must be strictly layered and manage state intelligently.The core principle is to use React to mount the SVG and manage the overall mode (e.g., "editing", "playback"), but rely on React Refs (useRef) to track the exact X/Y coordinates during a high-speed drag. This prevents React from re-rendering the entire component tree on every single pixel movement.1. The DOM Layering StrategyThe application requires a wrapper div containing two absolute-positioned layers stacked on top of each other:The Bottom Layer (WebGPU/WebGL <canvas>): This handles the heavy video rendering. It does not listen to touch events directly.The Top Layer (<svg>): This is your interactive overlay. The <svg> container itself must have CSS pointer-events: none so touches can pass through to the canvas if needed, but the draggable <circle> nodes inside it must have pointer-events: auto to catch the user's fingers.2. React Component ArchitectureHere is the structural blueprint for handling the touch mechanics efficiently using unified Pointer Events (which handle both touch and mouse seamlessly):JavaScriptimport React, { useRef, useState, useCallback } from 'react';
+
+const ProjectionMapper = () => {
+  // Use Refs for high-frequency coordinate updates to avoid React render lag
+  const corners = useRef({
+    tl: { x: 100, y: 100 },
+    tr: { x: 300, y: 100 },
+    bl: { x: 100, y: 300 },
+    br: { x: 300, y: 300 }
+  });
+
+  // Use State only to track WHICH node is currently being dragged
+  const [activeNode, setActiveNode] = useState(null);
+  const svgRef = useRef(null);
+
+  // 1. Initialize the Drag
+  const handlePointerDown = (nodeId) => (e) => {
+    e.stopPropagation();
+    e.target.setPointerCapture(e.pointerId); // Lock touch to this circle even if finger slides off slightly
+    setActiveNode(nodeId);
+  };
+
+  // 2. Process the Drag (High Frequency)
+  const handlePointerMove = useCallback((e) => {
+    if (!activeNode || !svgRef.current) return;
+
+    // Get exact touch coordinates relative to the SVG container
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Update the Ref (No React re-render triggered)
+    corners.current[activeNode] = { x, y };
+
+    // Directly mutate the SVG DOM elements for zero-latency visual feedback
+    const circle = document.getElementById(`node-${activeNode}`);
+    if (circle) {
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
+    }
+    
+    // Update the connecting outline polygon
+    updateOutline();
+
+    // Send the updated coordinates to your WebGPU rendering engine
+    updateWebGLMesh(corners.current, rect.width, rect.height);
+    
+  }, [activeNode]);
+
+  // 3. End the Drag
+  const handlePointerUp = (e) => {
+    if (activeNode) {
+      e.target.releasePointerCapture(e.pointerId);
+      setActiveNode(null);
+    }
+  };
+
+  return (
+    // 'touch-none' prevents the browser from scrolling the page when dragging
+    <div className="relative w-full h-screen bg-black touch-none overflow-hidden">
+      
+      {/* Background GPU Renderer */}
+      <canvas className="absolute inset-0 z-0" id="webgpu-canvas" />
+
+      {/* Foreground SVG Touch Overlay */}
+      <svg 
+        ref={svgRef}
+        className="absolute inset-0 w-full h-full z-10 pointer-events-none"
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        {/* The Mesh Outline (Visual Feedback) */}
+        <polygon 
+          id="mesh-outline"
+          className="fill-cyan-500/10 stroke-cyan-500 stroke-2"
+          points="..."
+        />
+
+        {/* The Draggable Corner Pins */}
+        {Object.entries(corners.current).map(([id, pos]) => (
+          <circle
+            key={id}
+            id={`node-${id}`}
+            cx={pos.x}
+            cy={pos.y}
+            r={24} // Make the touch target large enough for a thumb
+            className="fill-white stroke-cyan-500 stroke-4 pointer-events-auto cursor-pointer"
+            onPointerDown={handlePointerDown(id)}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+};
+3. Coordinate Translation (The Crucial Step)The most common point of failure in projection mapping apps is a mismatch between the screen's pixel coordinates and the GPU's rendering coordinates.When you call updateWebGLMesh() inside your handlePointerMove function, you must translate the raw screen pixels (e.g., x: 350, y: 800) into normalized clip space. WebGL and WebGPU expect coordinates where the center of the screen is (0, 0), the top-left is (-1.0, 1.0), and the bottom-right is (1.0, -1.0).JavaScript// Normalization math to run before sending to the GPU
+const normalizedX = (pixelX / svgWidth) * 2.0 - 1.0;
+const normalizedY = (pixelY / svgHeight) * -2.0 + 1.0; // Flipped because SVG Y goes down, WebGL Y goes up

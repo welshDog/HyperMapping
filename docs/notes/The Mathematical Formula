@@ -1,0 +1,63 @@
+Bilinear interpolation calculates the coordinates of any internal mesh point by taking a weighted average of all four corners based on the point's normalized row and column position.The Mathematical FormulaGiven a normalized grid where $u \in [0, 1]$ represents horizontal progress from left to right and $v \in [0, 1]$ represents vertical progress from top to bottom, bilinear interpolation blends all four corners:$$P(u, v) = (1 - u)(1 - v) P_{TL} + u (1 - v) P_{TR} + (1 - u) v P_{BL} + u v P_{BR}$$Where:$P_{TL}$ = Top-Left corner $(x_{TL}, y_{TL})$$P_{TR}$ = Top-Right corner $(x_{TR}, y_{TR})$$P_{BL}$ = Bottom-Left corner $(x_{BL}, y_{BL})$$P_{BR}$ = Bottom-Right corner $(x_{BR}, y_{BR})$JavaScript ImplementationThis function recalculates internal grid vertices into a flat Float32Array ready for WebGL buffer updates:JavaScript/**
+ * Calculates a warped 2D mesh grid using bilinear interpolation.
+ * 
+ * @param {Object} corners - Corner pin positions in clip space (-1 to 1) or canvas space.
+ * @param {Array<number>} corners.tl - Top-Left [x, y]
+ * @param {Array<number>} corners.tr - Top-Right [x, y]
+ * @param {Array<number>} corners.bl - Bottom-Left [x, y]
+ * @param {Array<number>} corners.br - Bottom-Right [x, y]
+ * @param {number} gridCols - Number of grid subdivisions horizontally (e.g. 20)
+ * @param {number} gridRows - Number of grid subdivisions vertically (e.g. 20)
+ * @returns {Float32Array} Flat array of vertex positions [x0, y0, x1, y1, ...]
+ */
+function calculateBilinearMesh(corners, gridCols, gridRows) {
+  const { tl, tr, bl, br } = corners;
+  
+  const numVertices = (gridCols + 1) * (gridRows + 1);
+  const buffer = new Float32Array(numVertices * 2);
+  
+  let offset = 0;
+
+  for (let r = 0; r <= gridRows; r++) {
+    const v = r / gridRows; // Normalized vertical factor [0.0 to 1.0]
+    const invV = 1.0 - v;
+
+    for (let c = 0; c <= gridCols; c++) {
+      const u = c / gridCols; // Normalized horizontal factor [0.0 to 1.0]
+      const invU = 1.0 - u;
+
+      // Bilinear Interpolation Weights
+      const wTL = invU * invV;
+      const wTR = u * invV;
+      const wBL = invU * v;
+      const wBR = u * v;
+
+      // Interpolate X and Y coordinates
+      const x = wTL * tl[0] + wTR * tr[0] + wBL * bl[0] + wBR * br[0];
+      const y = wTL * tl[1] + wTR * tr[1] + wBL * bl[1] + wBR * br[1];
+
+      buffer[offset++] = x;
+      buffer[offset++] = y;
+    }
+  }
+
+  return buffer;
+}
+Updating WebGL in Real TimeWhen a user drags a pin, pass the updated corners to calculateBilinearMesh and update the GPU vertex buffer with gl.bufferSubData() to avoid reallocating memory:JavaScript// Example state for corner pins in WebGL clip space (-1.0 to 1.0)
+const corners = {
+  tl: [-1.0,  1.0],
+  tr: [ 0.8,  0.9], // Top-right corner dragged inward
+  bl: [-0.9, -1.0],
+  br: [ 1.0, -1.0]
+};
+
+// 1. Recalculate 20x20 mesh grid
+const warpedVertices = calculateBilinearMesh(corners, 20, 20);
+
+// 2. Sub-upload updated float array directly to GPU VRAM
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+gl.bufferSubData(gl.ARRAY_BUFFER, 0, warpedVertices);
+
+// 3. Draw scene
+gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
+Bilinear Interpolation vs. Homography MatrixBilinear interpolation works well for curved, organic, or moderately distorted surfaces. However, because bilinear blending uses linear ratios of $u$ and $v$, severe corner drags can introduce non-linear foreshortening where straight grid lines appear slightly curved.If you need extreme perspective projection where straight lines must stay straight across heavy camera angles, you would calculate a 2D Homography Matrix ($3 \times 3$ matrix) instead.

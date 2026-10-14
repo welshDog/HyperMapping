@@ -1,0 +1,82 @@
+In WebGPU, updating vertex data every frame is much cleaner than it was in WebGL. Instead of dealing with complex memory mapping, unmapping, and staging buffers manually, WebGPU provides `device.queue.writeBuffer()`. This is the most performant way to stream small-to-medium datasets (like a 20x20 mesh grid) directly to the GPU without bottlenecking the CPU or interrupting the render cycle.
+
+To make this work, your WebGPU vertex buffer must be created with the `GPUBufferUsage.COPY_DST` flag, which explicitly allows the CPU queue to overwrite its contents on the fly.
+
+Here is how you structure the real-time update function to translate your React screen pixels into WebGPU's Normalized Device Coordinates (NDC) and push them to the graphics card.
+
+### 1. The WebGPU Coordinate System
+
+First, you must understand what WebGPU expects. Your smartphone screen uses pixel coordinates where `(0,0)` is the **top-left**.
+
+WebGPU uses **Normalized Device Coordinates (NDC)** where:
+
+* `(0,0)` is the **exact center** of the screen.
+* The X-axis goes from `-1.0` (left) to `1.0` (right).
+* The Y-axis goes from `-1.0` (bottom) to `1.0` (top).
+
+We must translate the UI pixels into NDC before generating the grid.
+
+### 2. The Real-Time Update Function
+
+This function will be called by your React `onPointerMove` event. It normalizes the four corner pins, calculates the dense internal mesh, and writes it directly to the GPU's memory.
+
+```javascript
+/**
+ * Pushes updated mesh coordinates to the WebGPU vertex buffer.
+ * 
+ * @param {Object} pixelCorners - The {tl, tr, bl, br} X/Y pixel coordinates from React
+ * @param {number} canvasWidth - The width of the projection canvas
+ * @param {number} canvasHeight - The height of the projection canvas
+ * @param {GPUDevice} device - The active WebGPU device instance
+ * @param {GPUBuffer} vertexBuffer - The destination buffer on the GPU
+ */
+function updateWebGPUMesh(pixelCorners, canvasWidth, canvasHeight, device, vertexBuffer) {
+  
+  // 1. Convert Screen Pixels to WebGPU NDC (-1.0 to 1.0)
+  const normalize = (pixel, isY) => {
+    if (isY) {
+      // Y goes down on screen, but up in WebGPU
+      return (pixel / canvasHeight) * -2.0 + 1.0;
+    } else {
+      // X goes right on both
+      return (pixel / canvasWidth) * 2.0 - 1.0;
+    }
+  };
+
+  const ndcCorners = {
+    tl: [normalize(pixelCorners.tl.x, false), normalize(pixelCorners.tl.y, true)],
+    tr: [normalize(pixelCorners.tr.x, false), normalize(pixelCorners.tr.y, true)],
+    bl: [normalize(pixelCorners.bl.x, false), normalize(pixelCorners.bl.y, true)],
+    br: [normalize(pixelCorners.br.x, false), normalize(pixelCorners.br.y, true)]
+  };
+
+  // 2. Generate the dense mesh grid using Bilinear Interpolation
+  // (Assuming a 20x20 grid for smooth video texture mapping)
+  const warpedVertices = calculateBilinearMesh(ndcCorners, 20, 20);
+
+  // 3. Write directly to the GPU VRAM
+  // device.queue.writeBuffer handles the memory barrier and staging automatically
+  device.queue.writeBuffer(
+    vertexBuffer,   // The GPU buffer (Must have GPUBufferUsage.COPY_DST)
+    0,              // Byte offset (Start at the beginning)
+    warpedVertices, // The Float32Array containing the new grid
+    0,              // Data offset 
+    warpedVertices.length // Length of data to write
+  );
+}
+
+```
+
+### 3. Creating the Buffer on Initialization
+
+For `writeBuffer` to work, the buffer must be initialized properly when the app first loads. It must explicitly declare that it acts as a vertex buffer and is allowed to receive copy commands from the queue.
+
+```javascript
+// Run once during WebGPU initialization
+const vertexBuffer = device.createBuffer({
+  label: "Warp Mesh Vertex Buffer",
+  size: 21 * 21 * 2 * Float32Array.BYTES_PER_ELEMENT, // 20x20 grid = 21 vertices across. 2 floats (X,Y) per vertex.
+  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST, 
+});
+
+```
