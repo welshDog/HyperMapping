@@ -54,7 +54,11 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     return () => {
       disposed = true;
       observer.disconnect();
-      active?.destroy();
+      if (active) {
+        active.onDeviceLost = undefined;
+        active.onFrameTime = null;
+        active.destroy();
+      }
     };
   }, [canvasRef]);
 

@@ -27,7 +27,9 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
   gl.shaderSource(s, src);
   gl.compileShader(s);
   if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    throw new Error(`Shader compile failed: ${gl.getShaderInfoLog(s)}`);
+    const log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error(`Shader compile failed: ${log}`);
   }
   return s;
 }
@@ -37,11 +39,29 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
   if (!gl) throw new Error('WebGL2 is not available');
 
   const program = gl.createProgram()!;
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VS));
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FS));
+  let vs: WebGLShader | null = null;
+  let fs: WebGLShader | null = null;
+  try {
+    vs = compile(gl, gl.VERTEX_SHADER, VS);
+    fs = compile(gl, gl.FRAGMENT_SHADER, FS);
+  } catch (e) {
+    if (vs) gl.deleteShader(vs); // compile() already deleted the one that failed
+    gl.deleteProgram(program);
+    throw e;
+  }
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(`Program link failed: ${gl.getProgramInfoLog(program)}`);
+  const linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+  const linkLog = linked ? '' : gl.getProgramInfoLog(program);
+  // The linked program keeps what it needs; the shader objects are no longer required.
+  gl.detachShader(program, vs);
+  gl.detachShader(program, fs);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+  if (!linked) {
+    gl.deleteProgram(program);
+    throw new Error(`Program link failed: ${linkLog}`);
   }
   gl.useProgram(program);
 
@@ -77,6 +97,7 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
 
   const positions = new Float32Array(topo.vertexCount * 2);
   let dirty = false;
+  let destroyed = false;
   let video: HTMLVideoElement | null = null;
 
   const setCorners = (c: Corners) => {
@@ -85,6 +106,7 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
   setCorners(UNIT_CORNERS);
 
   const draw = () => {
+    if (destroyed) return;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -113,10 +135,14 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement): Renderer {
     setFpsCap: (cap) => {
       loop.fpsCap = cap;
     },
-    start: () => loop.start(),
+    start: () => {
+      if (!destroyed) loop.start();
+    },
     stop: () => loop.stop(),
     destroy: () => {
       // Deliberately does not lose the context: the canvas may be reused.
+      if (destroyed) return;
+      destroyed = true;
       loop.stop();
       gl.deleteTexture(tex);
       gl.deleteBuffer(posBuf);

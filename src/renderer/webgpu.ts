@@ -101,6 +101,7 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
   }
 
   let dirty = false;
+  let destroyed = false;
   let video: HTMLVideoElement | null = null;
 
   const setCorners = (c: Corners) => {
@@ -109,6 +110,7 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
   setCorners(UNIT_CORNERS);
 
   const draw = () => {
+    if (destroyed) return;
     if (dirty) {
       device.queue.writeBuffer(posBuf, 0, positions);
       dirty = false;
@@ -156,13 +158,23 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     setFpsCap: (cap) => {
       loop.fpsCap = cap;
     },
-    start: () => loop.start(),
+    start: () => {
+      if (!destroyed) loop.start();
+    },
     stop: () => loop.stop(),
     destroy: () => {
-      loop.stop();
-      posBuf.destroy();
-      uvBuf.destroy();
-      idxBuf.destroy();
+      if (destroyed) return;
+      destroyed = true; // draw()/start() are no-ops from here on
+      loop.stop(); // stop the render loop BEFORE anything is torn down
+      try {
+        posBuf.destroy();
+        uvBuf.destroy();
+        idxBuf.destroy();
+        ctx.unconfigure();
+        device.destroy(); // device.lost then fires with reason 'destroyed' (ignored above)
+      } catch (e) {
+        console.warn('[hypermapping] WebGPU teardown error:', e);
+      }
     },
   };
   return renderer;
