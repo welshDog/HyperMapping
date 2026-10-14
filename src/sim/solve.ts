@@ -1,5 +1,6 @@
 import { defaultSlices } from '../surfaces/model';
 import { MAX_SURFACES, type Surface } from '../surfaces/types';
+import { isValidQuad } from '../warp/quad';
 import type { Corners, Vec2 } from '../warp/types';
 import { boxFaces, type Box, type FaceId } from './box';
 import { dot, lookAt, mul, perspective, sub, transformPoint, type Mat4, type V3 } from './math';
@@ -64,11 +65,13 @@ export function orderClockwise(points: Vec2[]): Corners {
   return { tl: o[0], tr: o[1], br: o[2], bl: o[3] };
 }
 
-export type SkipReason = 'facing-away' | 'behind-projector' | 'off-image';
+/** 'degenerate' = edge-on or too small to map (the app would reject the quad). */
+export type SkipReason = 'facing-away' | 'behind-projector' | 'off-image' | 'degenerate';
 
 export interface SolvedFace {
   face: FaceId;
   corners: Corners;
+  /** Mean of the projected corners; the facing test uses the 3D face centre. */
   centroidX: number;
   partlyOutside: boolean;
 }
@@ -110,9 +113,14 @@ export function solveFaces(box: Box, projector: Projector): SolveResult {
       result.skipped.push({ face: face.id, reason: 'off-image' });
       continue;
     }
+    const corners = orderClockwise(pts);
+    if (!isValidQuad(corners)) {
+      result.skipped.push({ face: face.id, reason: 'degenerate' });
+      continue;
+    }
     result.faces.push({
       face: face.id,
-      corners: orderClockwise(pts),
+      corners,
       centroidX: pts.reduce((a, p) => a + p[0], 0) / 4,
       partlyOutside: pts.some(([u, v]) => u < 0 || u > 1 || v < 0 || v > 1),
     });

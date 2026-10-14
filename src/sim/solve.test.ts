@@ -124,7 +124,21 @@ describe('solveFaces', () => {
     const r = solveFaces(CUBE, { ...FRONT_ON, distance: NaN });
     expect(r.faces).toEqual([]);
     const r2 = solveFaces({ ...CUBE, yawDeg: NaN }, FRONT_ON);
-    r2.faces.forEach((f) => [f.corners.tl, f.corners.tr, f.corners.br, f.corners.bl].forEach((p) => p.forEach((n) => expect(Number.isFinite(n)).toBe(true))));
+    expect(r2.faces).toEqual([]);
+    expect(r2.skipped).toHaveLength(6);
+  });
+
+  it('an edge-on face is skipped as degenerate', () => {
+    const r = solveFaces(CUBE, { ...FRONT_ON, height: 1.00001 });
+    expect(r.skipped).toContainEqual({ face: 'top', reason: 'degenerate' });
+    expect(r.faces.map((f) => f.face)).not.toContain('top');
+    r.faces.forEach((f) => expect(isValidQuad(f.corners)).toBe(true));
+  });
+
+  it('a face too small to map is skipped as degenerate', () => {
+    const r = solveFaces(CUBE, { ...FRONT_ON, distance: 200 });
+    expect(r.faces).toEqual([]);
+    expect(r.skipped).toContainEqual({ face: 'front', reason: 'degenerate' });
   });
 
   it('every quad is valid, clockwise, starts top-left, for any box yaw', () => {
