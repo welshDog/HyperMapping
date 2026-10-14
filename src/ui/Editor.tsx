@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
 import { FULL_RECT, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
+import { createAutosaver } from '../setups/autosave';
+import { getBrowserStore } from '../setups/browser-store';
+import { clearAutosave, loadAutosave, saveAutosave } from '../setups/setups';
 import type { Corners } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
 import { SliceEditor } from './SliceEditor';
+import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
@@ -18,9 +22,12 @@ const INITIAL_SURFACES: Surface[] = [{ id: 's1', corners: defaultCorners(0, 1), 
 export function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { renderer, error, quality } = useRenderer(canvasRef);
+  // Browser storage (null in a private window). The last layout is restored on reload.
+  const store = useMemo(() => getBrowserStore(), []);
+  const [startSurfaces] = useState<Surface[]>(() => (store ? loadAutosave(store) : null) ?? INITIAL_SURFACES);
   // The face list lives in a ref: pin drags mutate it without re-rendering React.
-  const surfacesRef = useRef<Surface[]>(INITIAL_SURFACES);
-  const [selectedId, setSelectedId] = useState('s1');
+  const surfacesRef = useRef<Surface[]>(startSurfaces);
+  const [selectedId, setSelectedId] = useState(startSurfaces[0].id);
   const [, setVersion] = useState(0); // bumps when the face list or selection changes (never during a drag)
   const [repaint, setRepaint] = useState(0);
   const channelRef = useRef<BroadcastChannel | null>(null);
@@ -29,20 +36,46 @@ export function Editor() {
   const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
+  const [setupsOpen, setSetupsOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
   const bump = () => setVersion((v) => v + 1);
 
-  /** The single place a face list change goes out: ref, renderer, and the output window. */
+  // One debounced writer remembers the layout for the next reload.
+  const autosaver = useMemo(
+    () =>
+      createAutosaver((list) => {
+        if (store) saveAutosave(store, list, Date.now());
+      }, 400),
+    [store],
+  );
+
+  /** The single place a face list change goes out: ref, renderer, the output window, and the autosave. */
   const publish = useCallback(
     (list: Surface[]) => {
       surfacesRef.current = list;
       renderer?.setSurfaces(list);
       channelRef.current?.postMessage({ type: 'surfaces', surfaces: list });
+      autosaver.schedule(list);
     },
-    [renderer],
+    [renderer, autosaver],
   );
+
+  // Save the layout right away when the page is hidden or closed, and when the Editor unmounts.
+  useEffect(() => {
+    const flush = () => autosaver.flush();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
+  }, [autosaver]);
 
   useEffect(() => {
     renderer?.setSurfaces(surfacesRef.current);
@@ -131,6 +164,13 @@ export function Editor() {
     setSelectedId(list[0].id);
     setRepaint((n) => n + 1);
     bump();
+  };
+
+  // Back to a single default face; also forgets the remembered layout.
+  const startFresh = () => {
+    adoptLayoutRef.current(INITIAL_SURFACES);
+    autosaver.cancel();
+    if (store) clearAutosave(store);
   };
 
   const onSliceChange = (id: string, rect: SrcRect) => {
@@ -231,6 +271,9 @@ export function Editor() {
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
           </button>
+          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={() => setSetupsOpen(true)}>
+            Setups
+          </button>
           <span className="ml-auto text-xs text-zinc-400">
             {error ?? `${renderer?.kind ?? 'starting…'} · ${Math.round(quality.scale * 100)}% · ${quality.fpsCap}fps`}
           </span>
@@ -251,6 +294,17 @@ export function Editor() {
           videoAspect={videoAspect}
           onChange={onSliceChange}
           onClose={() => setSliceMode(false)}
+        />
+      )}
+
+      {mode === 'edit' && setupsOpen && (
+        <SetupsPanel
+          store={store}
+          getSurfaces={() => surfacesRef.current}
+          hasVideo={blobRef.current !== null}
+          onLoad={(list) => adoptLayoutRef.current(list)}
+          onStartFresh={startFresh}
+          onClose={() => setSetupsOpen(false)}
         />
       )}
     </div>

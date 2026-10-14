@@ -37,6 +37,14 @@ then open `https://localhost:5173`.
   - The main app's own browser window is not the projector's shape, so its pins may look stretched there while the numbers are correct.
   - Lens shift: the model aims the lens axis at the box centre. Many cheap projectors have a fixed throw offset and are tilted instead, so leave Lens shift at 0 unless the axis really points at the box.
 
+## Saving your setup
+
+- **Setups** (in the toolbar) opens the setups panel. Type a name and press **Save**: the layout of all your faces (pins and slices) is stored in this browser. **Load** brings one back, **Delete** removes one (tap twice). Saving under an existing name replaces it. You can keep up to 30.
+- The **video is not saved**: after loading a setup, load your video again.
+- **Export file** downloads the current layout as a small `.json` file, and **Import file** loads one: use these as a backup or to move a setup to another device or browser. Saved setups live in this browser only and are lost if you clear its data or use a private window.
+- The Editor also **remembers your last layout** and restores it when you reload. **Start fresh** (tap twice) goes back to a single default face.
+- On an iPhone, Export may open a preview that needs "Save to Files".
+
 ## Known limits (M1)
 
 - A phone cannot use the output window as a second screen; it opens a tab. For a phone plugged into a
