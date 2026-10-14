@@ -1,33 +1,48 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
-import { FULL_RECT, type Surface } from '../surfaces/types';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
+import { addSurface, defaultCorners, removeSurface, selectAfterRemove } from '../surfaces/model';
+import { FULL_RECT, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import type { Corners } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
+import { SurfaceBar } from './SurfaceBar';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
 
 const TAP_TO_START = 'Tap anywhere to start the video';
 
-const INITIAL: Corners = { tl: [0.2, 0.2], tr: [0.8, 0.2], br: [0.8, 0.8], bl: [0.2, 0.8] };
-// Task 3 transitional helper: the app still has exactly one face here.
-const toSurfaces = (c: Corners): Surface[] => [{ id: 's1', corners: c, srcRect: FULL_RECT }];
+const INITIAL_SURFACES: Surface[] = [{ id: 's1', corners: defaultCorners(0, 1), srcRect: FULL_RECT }];
 
 export function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { renderer, error, quality } = useRenderer(canvasRef);
-  const cornersRef = useRef<Corners>(INITIAL);
+  // The face list lives in a ref: pin drags mutate it without re-rendering React.
+  const surfacesRef = useRef<Surface[]>(INITIAL_SURFACES);
+  const [selectedId, setSelectedId] = useState('s1');
+  const [, setVersion] = useState(0); // bumps when the face list or selection changes (never during a drag)
+  const [repaint, setRepaint] = useState(0);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const videoRef = useRef<VideoHandle | null>(null);
   const blobRef = useRef<Blob | null>(null);
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [notice, setNotice] = useState<string | null>(null);
-  const [resetSignal, setResetSignal] = useState(0);
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
+  const bump = () => setVersion((v) => v + 1);
+
+  /** The single place a face list change goes out: ref, renderer, and the output window. */
+  const publish = useCallback(
+    (list: Surface[]) => {
+      surfacesRef.current = list;
+      renderer?.setSurfaces(list);
+      channelRef.current?.postMessage({ type: 'surfaces', surfaces: list });
+    },
+    [renderer],
+  );
+
   useEffect(() => {
-    renderer?.setSurfaces(toSurfaces(cornersRef.current));
+    renderer?.setSurfaces(surfacesRef.current);
   }, [renderer]);
 
   // Autoplay can be refused, and backgrounding pauses the video: a paused video
@@ -52,12 +67,12 @@ export function Editor() {
     ch.onmessage = (ev) => {
       if (parseMsg(ev.data)?.type !== 'hello') return;
       // A new output window asked for everything we have.
-      ch.postMessage({ type: 'surfaces', surfaces: toSurfaces(cornersRef.current) });
+      ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
     // An output window that was already open (e.g. this editor was reloaded) never sends
     // a new hello, so push our state once now.
-    ch.postMessage({ type: 'surfaces', surfaces: toSurfaces(cornersRef.current) });
+    ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
     if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
@@ -66,19 +81,39 @@ export function Editor() {
     };
   }, []);
 
+  /** A pin move on one face. A bad quad is rejected for that face only. */
   const onCornersChange = useCallback(
-    (next: Corners) => {
+    (id: string, next: Corners) => {
       if (!isValidQuad(next)) return false;
-      cornersRef.current = next;
-      renderer?.setSurfaces(toSurfaces(next));
-      channelRef.current?.postMessage({ type: 'surfaces', surfaces: toSurfaces(next) });
+      publish(surfacesRef.current.map((s) => (s.id === id ? { ...s, corners: next } : s)));
       return true;
     },
-    [renderer],
+    [publish],
   );
 
-  const resetCorners = () => {
-    if (onCornersChange(INITIAL)) setResetSignal((n) => n + 1);
+  const resetFace = () => {
+    const list = surfacesRef.current;
+    const index = list.findIndex((s) => s.id === selectedId);
+    if (index < 0) return;
+    if (onCornersChange(selectedId, defaultCorners(index, list.length))) setRepaint((n) => n + 1);
+  };
+
+  const addFace = () => {
+    const next = addSurface(surfacesRef.current);
+    if (next === surfacesRef.current) return;
+    publish(next);
+    setSelectedId(next[next.length - 1].id);
+    bump();
+  };
+
+  const deleteFace = () => {
+    const list = surfacesRef.current;
+    const next = removeSurface(list, selectedId);
+    if (next === list) return;
+    const nextSelected = selectAfterRemove(list, selectedId);
+    publish(next);
+    setSelectedId(nextSelected);
+    bump();
   };
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -130,11 +165,26 @@ export function Editor() {
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
       {mode === 'edit' && (
-        <PinOverlay cornersRef={cornersRef} onChange={onCornersChange} resetSignal={resetSignal} />
+        <PinOverlay
+          surfacesRef={surfacesRef}
+          selectedId={selectedId}
+          onChange={onCornersChange}
+          repaintSignal={repaint}
+        />
       )}
 
       {mode === 'edit' ? (
         <div className="absolute inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-2 bg-black/70 p-3 text-sm backdrop-blur">
+          <SurfaceBar
+            surfaces={surfacesRef.current}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              bump();
+            }}
+            onAdd={addFace}
+            onDelete={deleteFace}
+          />
           <label
             className={`rounded-lg px-4 py-3 font-medium ${
               renderer ? 'cursor-pointer bg-cyan-500 text-black' : 'bg-zinc-700 text-zinc-400'
@@ -146,7 +196,7 @@ export function Editor() {
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={enterPlay}>
             Play mode
           </button>
-          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={resetCorners}>
+          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={resetFace}>
             Reset corners
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
