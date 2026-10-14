@@ -371,7 +371,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `lookAt, perspective, mul, transformPoint, dot, sub, V3, Mat4` (math); `Box, FaceId, boxFaces` (box); `defaultSlices`, `isValidQuad`, `Corners`, `Vec2`, `Surface`, `MAX_SURFACES`.
-- Produces: `interface Projector { distance; azimuthDeg; height; throwRatio; aspect; shiftY }`; `interface ProjectorCamera { eye: V3; view: Mat4; proj: Mat4; viewProj: Mat4 }`; `const PROJECTOR_NEAR = 0.05`, `PROJECTOR_FAR = 100`; `projectorCamera(p, box): ProjectorCamera`; `projectToUnit(viewProj, p): Vec2 | null`; `orderClockwise(points: Vec2[]): Corners`; `type SkipReason = 'facing-away'|'behind-projector'|'off-image'`; `interface SolvedFace { face: FaceId; corners: Corners; centroidX: number; partlyOutside: boolean }`; `interface SolveResult { faces: SolvedFace[]; skipped: { face: FaceId; reason: SkipReason }[] }`; `solveFaces(box, projector): SolveResult`; `toSurfaces(result): Surface[]`; (`defaults.ts`) `DEFAULT_BOX`, `DEFAULT_PROJECTOR`.
+- Produces: `interface Projector { distance; azimuthDeg; height; throwRatio; aspect; shiftY }`; `interface ProjectorCamera { eye: V3; view: Mat4; proj: Mat4; viewProj: Mat4 }`; `const PROJECTOR_NEAR = 0.05`, `PROJECTOR_FAR = 100`; `projectorCamera(p, box): ProjectorCamera`; `projectToUnit(viewProj, p): Vec2 | null`; `orderClockwise(points: Vec2[]): Corners`; `type SkipReason = 'facing-away'|'behind-projector'|'off-image'|'degenerate'` (`degenerate` = edge-on or too small: the quad would fail `isValidQuad`; added after Task 2 review); `interface SolvedFace { face: FaceId; corners: Corners; centroidX: number; partlyOutside: boolean }`; `interface SolveResult { faces: SolvedFace[]; skipped: { face: FaceId; reason: SkipReason }[] }`; `solveFaces(box, projector): SolveResult`; `toSurfaces(result): Surface[]`; (`defaults.ts`) `DEFAULT_BOX`, `DEFAULT_PROJECTOR`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1535,6 +1535,10 @@ describe('describeSolve', () => {
     const lines = describeSolve(solveFaces(CUBE, { ...FRONT_ON, throwRatio: 1.875 }));
     expect(lines).toContain('Partly outside the projector image: front');
   });
+  it('explains a face that is edge-on or too small', () => {
+    const lines = describeSolve(solveFaces(CUBE, { ...FRONT_ON, distance: 200 }));
+    expect(lines).toContain('Skipped front: edge-on or too small to map from here.');
+  });
   it('explains a face behind the projector', () => {
     const lines = describeSolve(
       solveFaces({ width: 1, height: 0.4, depth: 10, yawDeg: 0 }, { ...FRONT_ON, height: 1, distance: 3 }),
@@ -1568,6 +1572,8 @@ export function describeSolve(r: SolveResult): string[] {
     if (s.reason === 'behind-projector') lines.push(`Skipped ${s.face}: behind the projector.`);
     else if (s.reason === 'off-image') {
       lines.push(`Skipped ${s.face}: too far outside the image (widen the throw ratio or move back).`);
+    } else if (s.reason === 'degenerate') {
+      lines.push(`Skipped ${s.face}: edge-on or too small to map from here.`);
     }
     // 'facing-away' is the normal case for the back of a box: not worth a line.
   }
