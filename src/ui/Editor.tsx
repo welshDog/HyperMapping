@@ -26,6 +26,7 @@ export function Editor() {
   const channelRef = useRef<BroadcastChannel | null>(null);
   const videoRef = useRef<VideoHandle | null>(null);
   const blobRef = useRef<Blob | null>(null);
+  const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,7 +68,12 @@ export function Editor() {
     const ch = new BroadcastChannel(CHANNEL);
     channelRef.current = ch;
     ch.onmessage = (ev) => {
-      if (parseMsg(ev.data)?.type !== 'hello') return;
+      const msg = parseMsg(ev.data);
+      if (msg?.type === 'layout') {
+        adoptLayoutRef.current(msg.surfaces);
+        return;
+      }
+      if (msg?.type !== 'hello') return;
       // A new output window asked for everything we have.
       ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
@@ -115,6 +121,15 @@ export function Editor() {
     const nextSelected = selectAfterRemove(list, selectedId);
     publish(next);
     setSelectedId(nextSelected);
+    bump();
+  };
+
+  // The simulator computed a face layout: replace the face list, select the first face.
+  // Stored in a ref because the channel effect below runs once and must see the latest `publish`.
+  adoptLayoutRef.current = (list: Surface[]) => {
+    publish(list);
+    setSelectedId(list[0].id);
+    setRepaint((n) => n + 1);
     bump();
   };
 

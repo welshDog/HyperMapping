@@ -62,4 +62,23 @@ describe('parseMsg', () => {
     expect(parseMsg('hello')).toBeNull();
     expect(parseMsg(null)).toBeNull();
   });
+  it('accepts a well-formed layout message', () => {
+    const msg = { type: 'layout', surfaces: [surface('s1'), surface('s2')] };
+    expect(parseMsg(msg)).toEqual(msg);
+  });
+  it('rejects a layout message for every case surfaces rejects', () => {
+    const bad = (surfaces: unknown) => parseMsg({ type: 'layout', surfaces });
+    expect(bad([])).toBeNull();
+    expect(bad('nope')).toBeNull();
+    expect(bad(undefined)).toBeNull();
+    expect(bad(Array.from({ length: 7 }, (_, i) => surface('s' + (i + 1))))).toBeNull();
+    expect(bad([surface('a'), surface('a')])).toBeNull();
+    expect(bad([surface('a', { corners: { ...corners, tl: [NaN, 0] } })])).toBeNull();
+    expect(bad([surface('a', { srcRect: { u0: 0.5, v0: 0, u1: 0.5, v1: 1 } })])).toBeNull();
+    expect(bad([null])).toBeNull();
+  });
+  it('strips unknown fields from a layout message', () => {
+    const out = parseMsg({ type: 'layout', surfaces: [surface('s1', { evil: 1 })], extra: true });
+    expect(out).toEqual({ type: 'layout', surfaces: [surface('s1')] });
+  });
 });
