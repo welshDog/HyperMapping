@@ -9,9 +9,7 @@ const FRONT_ON: Projector = { distance: 3, azimuthDeg: 0, height: 0.5, throwRati
 
 describe('describeSolve', () => {
   it('lists the faces used, left to right, and nothing else for a clean solve', () => {
-    // The default throw ratio (1.2) leaves the front and right faces partly outside the image, so use a
-    // slightly wider lens here to get a genuinely clean solve.
-    const lines = describeSolve(solveFaces(DEFAULT_BOX, { ...DEFAULT_PROJECTOR, throwRatio: 1.0 }));
+    const lines = describeSolve(solveFaces(DEFAULT_BOX, DEFAULT_PROJECTOR));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^Faces used \(left to right\): /);
     for (const f of ['front', 'right', 'top']) expect(lines[0]).toContain(f);

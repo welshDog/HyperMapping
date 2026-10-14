@@ -82,6 +82,7 @@ describe('solveFaces', () => {
   it('the default setup is a good starting point: three faces, nothing off-image', () => {
     const r = solveFaces(DEFAULT_BOX, DEFAULT_PROJECTOR);
     expect(r.faces).toHaveLength(3);
+    expect(r.faces.every((f) => !f.partlyOutside)).toBe(true);
     expect(r.skipped.every((s) => s.reason === 'facing-away')).toBe(true);
   });
 

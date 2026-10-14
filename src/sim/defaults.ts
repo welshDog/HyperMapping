@@ -7,7 +7,7 @@ export const DEFAULT_PROJECTOR: Projector = {
   distance: 3,
   azimuthDeg: 25,
   height: 1.5,
-  throwRatio: 1.2,
+  throwRatio: 1.0,
   aspect: 16 / 9,
   shiftY: 0,
 };
