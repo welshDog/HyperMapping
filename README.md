@@ -32,6 +32,7 @@ then open `https://localhost:5173`.
 - **+ Face** adds another grid (up to 6). Each face has its own four pins; pick a face with its tab, then drag its pins onto that face of the box. **Delete** removes the selected face, **Reset corners** resets just that face.
 - All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a box that stands for the whole video (there is no picture of the video yet) where you drag the selected face's rectangle (drag the body to move it, a corner to resize it); press Done to see the result. New faces start as equal strips.
 - Play mode and the output window show every face.
+- **Glue** (toolbar, on by default): pins that sit on the same spot belong together. Drag one and the others move with it, so a box corner shared by three faces moves all three. Drag a pin close to a pin of another face and it snaps onto it. A small dim dot marks the corners of your other faces and a ring marks a glued pin. To pull a pin away from its neighbours, switch Glue **off**, drag it, then switch Glue back on. A move that would break any face is refused.
 
 ## Virtual projector (simulator)
 

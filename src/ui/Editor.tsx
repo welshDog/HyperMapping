@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
+import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
 import { FULL_RECT, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import { createAutosaver } from '../setups/autosave';
 import { getBrowserStore } from '../setups/browser-store';
 import { clearAutosave, loadAutosave, saveAutosave } from '../setups/setups';
-import type { Corners } from '../warp/types';
+import type { Corners, Vec2 } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
 import { SliceEditor } from './SliceEditor';
 import { SetupsPanel } from './SetupsPanel';
@@ -37,6 +38,7 @@ export function Editor() {
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [setupsOpen, setSetupsOpen] = useState(false);
+  const [glue, setGlue] = useState(true); // pins on the same spot move together and snap; not saved
   const [notice, setNotice] = useState<string | null>(null);
   useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
@@ -130,6 +132,20 @@ export function Editor() {
       return true;
     },
     [publish],
+  );
+
+  /**
+   * A pin of the selected face was dragged. With Glue on, pins glued to it (same spot, any face) move
+   * with it and it snaps onto a nearby pin of another face; a move that would break any face is refused.
+   */
+  const onPinMove = useCallback(
+    (ref: PinRef, p: Vec2, size: { w: number; h: number }) => {
+      const next = moveGluedPin(surfacesRef.current, ref, p, { glue, radiusPx: SNAP_RADIUS_PX, size });
+      if (!next) return false;
+      publish(next);
+      return true;
+    },
+    [glue, publish],
   );
 
   const resetFace = () => {
@@ -236,7 +252,7 @@ export function Editor() {
         <PinOverlay
           surfacesRef={surfacesRef}
           selectedId={selectedId}
-          onChange={onCornersChange}
+          onPinMove={onPinMove}
           repaintSignal={repaint}
         />
       )}
@@ -267,6 +283,13 @@ export function Editor() {
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={resetFace}>
             Reset corners
+          </button>
+          <button
+            aria-pressed={glue}
+            className={`rounded-lg px-4 py-3 ${glue ? 'bg-cyan-500 font-medium text-black' : 'bg-zinc-700'}`}
+            onClick={() => setGlue((g) => !g)}
+          >
+            Glue: {glue ? 'on' : 'off'}
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
