@@ -12,6 +12,9 @@ describe('parseSurfaceList', () => {
     expect(out).toEqual(input);
     expect(out[0]).not.toBe(input[0]);
     expect(out[0].srcRect).not.toBe(input[0].srcRect);
+    expect(out[0].corners).not.toBe(input[0].corners);
+    expect(out[0].corners.tl).not.toBe(input[0].corners.tl);
+    expect(out[0].corners.tl).toEqual(input[0].corners.tl);
   });
   it('drops unknown fields', () => {
     expect(parseSurfaceList([surface('s1', { evil: 1 })])).toEqual([surface('s1')]);

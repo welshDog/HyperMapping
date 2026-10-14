@@ -18,7 +18,7 @@ function parseSurface(raw: unknown): Surface | null {
   if (!(isNum(r.u0) && isNum(r.v0) && isNum(r.u1) && isNum(r.v1))) return null;
   return {
     id: s.id,
-    corners: { tl: c.tl, tr: c.tr, br: c.br, bl: c.bl },
+    corners: { tl: [c.tl[0], c.tl[1]], tr: [c.tr[0], c.tr[1]], br: [c.br[0], c.br[1]], bl: [c.bl[0], c.bl[1]] },
     srcRect: { u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1 },
   };
 }
