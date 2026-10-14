@@ -31,14 +31,20 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
           return;
         }
         active = r;
+        r.onDeviceLost = () => setError('Graphics device lost — reload the page');
+        let last: Quality = guard.quality;
         r.onFrameTime = (ms) => {
           const q = guard.push(ms);
+          if (q.scale === last.scale && q.fpsCap === last.fpsCap) return;
+          last = q;
+          // Logged only on change, so a thermal run leaves a readable timeline.
+          console.info('[hypermapping] quality', { t: Math.round(performance.now()), scale: q.scale, fpsCap: q.fpsCap });
           if (q.scale !== scale) {
             scale = q.scale;
             fit();
           }
           r.setFpsCap(q.fpsCap);
-          setQuality((prev) => (prev.scale === q.scale && prev.fpsCap === q.fpsCap ? prev : q));
+          setQuality(q);
         };
         r.start();
         setRenderer(r);

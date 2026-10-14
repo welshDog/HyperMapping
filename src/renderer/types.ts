@@ -4,6 +4,8 @@ export interface Renderer {
   readonly kind: 'webgpu' | 'webgl2';
   /** Called with ms between drawn frames; wire to ThermalGuard. */
   onFrameTime: ((ms: number) => void) | null;
+  /** WebGPU only: the GPU device was lost (driver reset, OOM). WebGL2 leaves it undefined. */
+  onDeviceLost?: (message: string) => void;
   /** Corners in unit space (0..1, Y down). Invalid quads are ignored. */
   setCorners(corners: Corners): void;
   setVideo(video: HTMLVideoElement | null): void;

@@ -29,54 +29,76 @@ fn fs(in: VSOut) -> @location(0) vec4f {
 
 export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<Renderer> {
   if (!navigator.gpu) throw new Error('WebGPU is not available');
-  // Acquire the device BEFORE touching the canvas: once getContext('webgpu') has
-  // succeeded the canvas can no longer give out a WebGL2 context for the fallback.
+  // Everything that can fail (device, shader, pipeline) happens BEFORE touching
+  // the canvas: once getContext('webgpu') has succeeded the canvas can no longer
+  // give out a WebGL2 context, so a failure after that point would leave no fallback.
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error('No WebGPU adapter');
   const device = await adapter.requestDevice();
-  device.lost.then((info) => console.warn('[hypermapping] WebGPU device lost:', info.message));
+  let renderer: Renderer | null = null; // assigned below; device.lost may fire any time after
+  device.lost.then((info) => {
+    console.warn('[hypermapping] WebGPU device lost:', info.message);
+    if (info.reason !== 'destroyed') renderer?.onDeviceLost?.(info.message);
+  });
 
-  const ctx = canvas.getContext('webgpu');
-  if (!ctx) throw new Error('Could not get a WebGPU canvas context');
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  ctx.configure({ device, format, alphaMode: 'opaque' });
-
+  const format = navigator.gpu.getPreferredCanvasFormat(); // needs no canvas
   const topo = buildTopology();
   const positions = new Float32Array(topo.vertexCount * 2);
+  let pipeline: GPURenderPipeline;
+  let sampler: GPUSampler;
+  let posBuf: GPUBuffer;
+  let uvBuf: GPUBuffer;
+  let idxBuf: GPUBuffer;
+  let ctx: GPUCanvasContext;
+  try {
+    const module = device.createShaderModule({ code: WGSL });
+    const compile = await module.getCompilationInfo();
+    const errors = compile.messages.filter((m) => m.type === 'error');
+    if (errors.length) throw new Error(`WGSL compile failed: ${errors.map((m) => m.message).join('; ')}`);
 
-  const posBuf = device.createBuffer({
-    label: 'warp positions',
-    size: positions.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  const uvBuf = device.createBuffer({
-    label: 'warp uvs',
-    size: topo.uvs.byteLength,
-    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-  });
-  const idxBuf = device.createBuffer({
-    label: 'warp indices',
-    size: topo.indices.byteLength, // 4800 bytes, a multiple of 4
-    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(uvBuf, 0, topo.uvs as Float32Array<ArrayBuffer>);
-  device.queue.writeBuffer(idxBuf, 0, topo.indices as Uint16Array<ArrayBuffer>);
+    // The async variant rejects on validation errors instead of failing silently later.
+    pipeline = await device.createRenderPipelineAsync({
+      layout: 'auto',
+      vertex: {
+        module,
+        entryPoint: 'vs',
+        buffers: [
+          { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
+          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
+        ],
+      },
+      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+    });
+    sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
-  const module = device.createShaderModule({ code: WGSL });
-  const pipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: {
-      module,
-      entryPoint: 'vs',
-      buffers: [
-        { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-        { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-      ],
-    },
-    fragment: { module, entryPoint: 'fs', targets: [{ format }] },
-    primitive: { topology: 'triangle-list', cullMode: 'none' },
-  });
-  const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    posBuf = device.createBuffer({
+      label: 'warp positions',
+      size: positions.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    uvBuf = device.createBuffer({
+      label: 'warp uvs',
+      size: topo.uvs.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    idxBuf = device.createBuffer({
+      label: 'warp indices',
+      size: topo.indices.byteLength, // 4800 bytes, a multiple of 4
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(uvBuf, 0, topo.uvs as Float32Array<ArrayBuffer>);
+    device.queue.writeBuffer(idxBuf, 0, topo.indices as Uint16Array<ArrayBuffer>);
+
+    // Only now claim the canvas.
+    const c = canvas.getContext('webgpu');
+    if (!c) throw new Error('Could not get a WebGPU canvas context');
+    c.configure({ device, format, alphaMode: 'opaque' });
+    ctx = c;
+  } catch (e) {
+    device.destroy(); // free the GPU before falling back to WebGL2
+    throw e;
+  }
 
   let dirty = false;
   let video: HTMLVideoElement | null = null;
@@ -122,9 +144,9 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     device.queue.submit([encoder.finish()]);
   };
 
-  const loop = new FrameLoop({ draw, onFrameTime: (ms) => renderer.onFrameTime?.(ms) });
+  const loop = new FrameLoop({ draw, onFrameTime: (ms) => renderer?.onFrameTime?.(ms) });
 
-  const renderer: Renderer = {
+  renderer = {
     kind: 'webgpu',
     onFrameTime: null,
     setCorners,
