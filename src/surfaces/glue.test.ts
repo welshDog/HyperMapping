@@ -98,6 +98,14 @@ describe('snapTarget', () => {
     // dragging the shared pin of A and B: B's far corner b.tr (0.9, 0.2) must not be a target
     expect(snapTarget([A, B, C], pin('a', 'tr'), [0.9, 0.2], 24, SIZE)).toBeNull();
   });
+  it('snaps at exactly the radius (d == radiusPx) and not just inside it', () => {
+    // dyadic numbers so the pixel distance is exactly a 12-16-20 triangle in floating point
+    const sz = { w: 1024, h: 1024 };
+    const target = face('c', sq(0.5, 0.5, 0.95, 0.9));
+    const p: [number, number] = [0.5 - 12 / 1024, 0.5 - 16 / 1024];
+    expect(snapTarget([lone, target], pin('a', 'tr'), p, 20, sz)).toEqual([0.5, 0.5]);
+    expect(snapTarget([lone, target], pin('a', 'tr'), p, 19.999, sz)).toBeNull();
+  });
   it('picks the nearest of several candidates', () => {
     const d = face('d', sq(0.62, 0.2, 0.95, 0.5)); // d.tl = (0.62, 0.2)
     expect(snapTarget([lone, c, d], pin('a', 'tr'), [0.615, 0.2], 24, SIZE)).toEqual([0.62, 0.2]);
@@ -137,6 +145,20 @@ describe('moveGluedPin', () => {
     const before = clone([A, B, C]);
     expect(moveGluedPin([A, B, C], pin('a', 'tr'), [1.2, 0.2], opts(true))).toBeNull();
     expect([A, B, C]).toEqual(before);
+  });
+  it('Glue on: if the snapped move is refused, the raw pointer position is tried once', () => {
+    // D.br sits exactly on A.tl, so snapping A.tr onto D.br would put A.tr on A.tl and collapse A
+    const D = face('d', sq(0.0, 0.0, 0.1, 0.2));
+    const p: [number, number] = [0.11, 0.2]; // 10 px from D.br
+    expect(snapTarget([A, D], pin('a', 'tr'), p, 24, SIZE)).toEqual([0.1, 0.2]);
+    expect(movePins([A, D], [pin('a', 'tr')], [0.1, 0.2])).toBeNull();
+    const out = moveGluedPin([A, D], pin('a', 'tr'), p, opts(true))!;
+    expect(out).not.toBeNull();
+    expect(out[0].corners.tr).toEqual(p);
+    expect(out[0].corners.tr).not.toEqual(D.corners.br);
+  });
+  it('Glue on: with no snap target a refused move is not retried (still null)', () => {
+    expect(moveGluedPin([A, B, C], pin('a', 'tr'), [1.2, 0.2], opts(true))).toBeNull();
   });
   it('a single face with no partners moves just that pin, as before', () => {
     const out = moveGluedPin([A], pin('a', 'tr'), [0.45, 0.25], opts(true))!;

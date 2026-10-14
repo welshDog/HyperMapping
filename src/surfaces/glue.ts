@@ -104,6 +104,7 @@ export function movePins(surfaces: Surface[], pins: PinRef[], to: Vec2): Surface
 /**
  * The one entry point used by the Editor when a pin is dragged to `p`.
  * Glue on: the whole glued group moves, and snaps onto a nearby pin of another face.
+ * If the snapped move is refused, the raw pointer position is tried once.
  * Glue off: only the dragged pin moves and nothing snaps.
  */
 export function moveGluedPin(
@@ -115,6 +116,9 @@ export function moveGluedPin(
   if (!opts.glue) return movePins(surfaces, [ref], p);
   const group = gluedGroup(surfaces, ref);
   if (group.length === 0) return null;
-  const to = snapTarget(surfaces, ref, p, opts.radiusPx, opts.size) ?? p;
-  return movePins(surfaces, group, to);
+  const snapped = snapTarget(surfaces, ref, p, opts.radiusPx, opts.size);
+  if (!snapped) return movePins(surfaces, group, p);
+  // A snap target that cannot be used (it would collapse a face) must not freeze the pin while the
+  // pointer is inside its radius: fall back to the raw pointer position once.
+  return movePins(surfaces, group, snapped) ?? movePins(surfaces, group, p);
 }
