@@ -104,6 +104,11 @@ export function Editor() {
     const source = createPatternSource();
     patternRef.current = source;
     setPatternAvailable(source !== null);
+    if (source === null && patternForceRef.current) {
+      patternForceRef.current = false;
+      setPatternForce(false);
+      channelRef.current?.postMessage({ type: 'pattern', on: false });
+    }
     applySource();
     return () => {
       source?.dispose();
@@ -112,7 +117,7 @@ export function Editor() {
   }, [renderer, applySource]);
 
   const togglePattern = () => {
-    const next = !patternForce;
+    const next = !patternForceRef.current;
     patternForceRef.current = next;
     setPatternForce(next);
     channelRef.current?.postMessage({ type: 'pattern', on: next });
