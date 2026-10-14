@@ -1,14 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { CHANNEL } from '../output/protocol';
 import { createRenderer, type Renderer } from '../renderer';
+import type { Surface } from '../surfaces/types';
 import { useOutputFeed } from '../ui/useOutputFeed';
 import type { Box } from './box';
 import { DEFAULT_BOX, DEFAULT_PROJECTOR } from './defaults';
+import { describeSolve } from './describe';
 import { SimScene } from './scene';
 import { SimControls } from './SimControls';
-import type { Projector } from './solve';
+import { solveFaces, toSurfaces, type Projector } from './solve';
 
 const OUTPUT_HEIGHT = 720;
+
+type Mode = 'app' | 'solved';
 
 export function SimApp() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -17,7 +22,13 @@ export function SimApp() {
   const [renderer, setRenderer] = useState<Renderer | null>(null);
   const [outCanvas, setOutCanvas] = useState<HTMLCanvasElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('app');
+  const [note, setNote] = useState<string | null>(null);
   const sceneRef = useRef<SimScene | null>(null);
+
+  const solve = useMemo(() => solveFaces(box, projector), [box, projector]);
+  const solvedSurfaces = useMemo(() => toSurfaces(solve), [solve]);
+  const summary = useMemo(() => describeSolve(solve), [solve]);
 
   // The projector image: the app's own renderer drawing into a hidden canvas, exactly like an
   // Output window. Forced to WebGL2 with a preserved buffer so three.js can sample it any time.
@@ -47,7 +58,27 @@ export function SimApp() {
     };
   }, [projector.aspect]);
 
-  useOutputFeed(renderer);
+  // Faces from the main app are remembered always, but only drawn while we follow the app.
+  const appSurfaces = useRef<Surface[]>([]);
+  const modeRef = useRef<Mode>(mode);
+  modeRef.current = mode;
+  const rendererRef = useRef<Renderer | null>(renderer);
+  rendererRef.current = renderer;
+  const onAppSurfaces = useCallback((s: Surface[]) => {
+    appSurfaces.current = s;
+    if (modeRef.current === 'app') rendererRef.current?.setSurfaces(s);
+  }, []);
+  useOutputFeed(renderer, onAppSurfaces);
+
+  // Which layout the projector image shows: the app's, or the one we just computed.
+  useEffect(() => {
+    if (!renderer) return;
+    if (mode === 'solved') {
+      if (solvedSurfaces.length) renderer.setSurfaces(solvedSurfaces);
+    } else {
+      renderer.setSurfaces(appSurfaces.current);
+    }
+  }, [renderer, mode, solvedSurfaces]);
 
   // The 3D scene, created once the projector image exists.
   useEffect(() => {
@@ -69,6 +100,15 @@ export function SimApp() {
     sceneRef.current?.setLayout(box, projector);
   }, [box, projector, outCanvas]);
 
+  const sendToApp = () => {
+    if (!solvedSurfaces.length) return;
+    const ch = new BroadcastChannel(CHANNEL);
+    ch.postMessage({ type: 'layout', surfaces: solvedSurfaces });
+    ch.close();
+    setMode('app'); // the app echoes its new faces back, so we follow it again
+    setNote('Sent. The main app tab now uses this layout (nudge the pins to fine-tune).');
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col bg-zinc-950 text-white md:flex-row">
       <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" />
@@ -78,6 +118,32 @@ export function SimApp() {
           Open the main app in another tab and load a video: it appears on the box here.
         </p>
         {error && <p className="mb-2 text-xs text-amber-400">{error}</p>}
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-black" onClick={() => { setMode('solved'); setNote(null); }}>
+            Solve
+          </button>
+          <button
+            className="rounded-lg bg-zinc-700 px-3 py-2 text-sm disabled:opacity-40"
+            disabled={mode !== 'solved' || solvedSurfaces.length === 0}
+            onClick={sendToApp}
+          >
+            Send to app
+          </button>
+          <button className="rounded-lg bg-zinc-700 px-3 py-2 text-sm disabled:opacity-40" disabled={mode === 'app'} onClick={() => setMode('app')}>
+            Show app layout
+          </button>
+        </div>
+        <p className="mb-1 text-xs text-zinc-400">
+          Showing: <span className="text-white">{mode === 'solved' ? 'computed layout' : "the main app's layout"}</span>
+        </p>
+        <p className="mb-2 text-xs text-zinc-500">Send to app replaces the main app's faces with the computed ones.</p>
+        <ul className="mb-3 list-disc pl-4 text-xs text-zinc-300">
+          {summary.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        {note && <p className="mb-3 text-xs text-emerald-400">{note}</p>}
+
         <SimControls box={box} projector={projector} onBox={setBox} onProjector={setProjector} />
       </aside>
     </div>

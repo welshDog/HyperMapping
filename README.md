@@ -26,6 +26,13 @@ then open `https://localhost:5173`.
 - All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a box that stands for the whole video (there is no picture of the video yet) where you drag the selected face's rectangle (drag the body to move it, a corner to resize it); press Done to see the result. New faces start as equal strips.
 - Play mode and the output window show every face.
 
+## Virtual projector (simulator)
+
+- Open `/simulator.html` (for example `https://localhost:5173/simulator.html`) in another tab while the main app is open and a video is loaded. It shows a 3D box with your real output projected onto it from a virtual projector; drag to orbit.
+- Set the box size and turn, and the projector's distance, side angle, lens height, throw ratio (from its spec sheet) and lens shift.
+- **Solve** computes each visible face's four pins from those numbers and previews the video wrapped on the box. **Send to app** replaces the main app's faces with them, so you start from a good layout and only nudge the pins.
+- It is a starting point built from measurements: tape-measure error, the projector's real lens shift and your screen's shape (the simulator assumes a 16:9 projector image) will still need small pin adjustments.
+
 ## Known limits (M1)
 
 - A phone cannot use the output window as a second screen; it opens a tab. For a phone plugged into a
