@@ -77,14 +77,14 @@ export function SliceEditor({ surfaces, selectedId, videoAspect, onChange, onClo
   };
 
   return (
-    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/90 p-4">
+    <div className="absolute inset-0 z-40 flex flex-col overflow-auto items-center justify-center gap-3 bg-black/90 p-4">
       <p className="text-xs text-zinc-300">
         Face {Math.max(0, selectedIndex) + 1}: drag the box to move its slice of the video, drag a corner to resize.
       </p>
       <div
         ref={boxRef}
-        className="relative touch-none overflow-hidden rounded-md border border-zinc-600 bg-zinc-900"
-        style={{ aspectRatio: String(videoAspect), width: `min(92vw, calc(60vh * ${videoAspect}))` }}
+        className="relative touch-none rounded-md border border-zinc-600 bg-zinc-900"
+        style={{ aspectRatio: String(videoAspect), width: `min(92vw, calc(50vh *${videoAspect}))` }}
       >
         {surfaces.map((s, i) =>
           s.id === selectedId ? null : (
@@ -107,7 +107,7 @@ export function SliceEditor({ surfaces, selectedId, videoAspect, onChange, onClo
             {HANDLES.map((h) => (
               <div
                 key={h.corner}
-                className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full border-2 bg-white/40"
+                className="absolute h-11 w-11-translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full border-2 bg-white/40"
                 style={{ ...h.style, borderColor: color }}
                 onPointerDown={onHandleDown(h.corner)}
                 onPointerMove={onHandleMove(h.corner)}

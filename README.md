@@ -23,7 +23,7 @@ then open `https://localhost:5173`.
 ## Mapping a box (several faces)
 
 - **+ Face** adds another grid (up to 6). Each face has its own four pins; pick a face with its tab, then drag its pins onto that face of the box. **Delete** removes the selected face, **Reset corners** resets just that face.
-- All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a picture of the whole video where you drag the selected face's rectangle (drag the body to move it, a corner to resize it). New faces start as equal strips.
+- All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a box that stands for the whole video (there is no picture of the video yet) where you drag the selected face's rectangle (drag the body to move it, a corner to resize it); press Done to see the result. New faces start as equal strips.
 - Play mode and the output window show every face.
 
 ## Known limits (M1)

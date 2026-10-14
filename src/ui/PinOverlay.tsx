@@ -62,6 +62,11 @@ export function PinOverlay({ surfacesRef, selectedId, onChange, repaintSignal }:
     if (repaintSignal !== undefined) paint();
   }, [repaintSignal, paint]);
 
+  // A second finger changing the selection mid-drag must not leave a stale drag behind.
+  useEffect(() => {
+    dragging.current = null;
+  }, [selectedId]);
+
   const onDown = (id: CornerId) => (e: PointerEvent<SVGCircleElement>) => {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
