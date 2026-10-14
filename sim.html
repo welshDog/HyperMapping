@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Box Mapping Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; }
+        canvas { display: block; }
+    </style>
+    <!-- Load Three.js via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<script>
+    // 1. Setup Scene, Camera, and WebGL Renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Position camera to look down at the box angled
+    camera.position.set(3, 3, 5);
+    camera.lookAt(0, 0, 0);
+
+    // 2. Create a Dynamic Canvas to act as our "Video/Projection Pattern" Source
+    const dynamicCanvas = document.createElement('canvas');
+    dynamicCanvas.width = 512;
+    dynamicCanvas.height = 512;
+    const ctx = dynamicCanvas.getContext('2d');
+
+    // Convert the HTML canvas into a Three.js Texture
+    const projectionTexture = new THREE.CanvasTexture(dynamicCanvas);
+
+    // 3. Create the Physical Box Geometry & Apply the Texture
+    const geometry = new THREE.BoxGeometry(2, 2, 2);
+    
+    // Using MeshBasicMaterial so the neon "projection" lines pop without needing lights
+    const material = new THREE.MeshBasicMaterial({ 
+        map: projectionTexture,
+        side: THREE.DoubleSide
+    });
+    
+    const box = new THREE.Mesh(geometry, material);
+    scene.add(box);
+
+    // Add a wireframe overlay to emphasize the 3D corners/edges
+    const wireframeGeom = new THREE.BoxGeometry(2.01, 2.01, 2.01);
+    const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true });
+    const wireframe = new THREE.Mesh(wireframeGeom, wireframeMat);
+    scene.add(wireframe);
+
+    // 4. Animation Loop to Generate "Video Content" and Rotate Object
+    let frame = 0;
+
+    function animate() {
+        requestAnimationFrame(animate);
+        frame++;
+
+        // Draw an animated calibration grid pattern on our canvas texture
+        ctx.fillStyle = '#050510';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Draw an outer framing border
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(10, 10, 492, 492);
+
+        // Draw moving "projection scan" lines
+        ctx.strokeStyle = 'rgba(255, 0, 128, 0.8)';
+        ctx.lineWidth = 4;
+        let lineY = (frame * 2) % 512;
+        ctx.beginPath();
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(512, lineY);
+        ctx.stroke();
+
+        // Draw a pulsating crosshair target in the center
+        let radius = 40 + Math.sin(frame * 0.05) * 15;
+        ctx.strokeStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(256, 256, radius, 0, Math.PI * 2);
+        ctx.moveTo(256, 216); ctx.lineTo(256, 296);
+        ctx.moveTo(216, 256); ctx.lineTo(296, 256);
+        ctx.stroke();
+
+        // Flag Three.js to re-upload the canvas data to the GPU memory
+        projectionTexture.needsUpdate = true;
+
+        // Slow rotation to simulate a mapping preview
+        box.rotation.y += 0.005;
+        box.rotation.x = 0.4; // Fixed angle tilt to see top and sides
+        wireframe.rotation.y = box.rotation.y;
+        wireframe.rotation.x = box.rotation.x;
+
+        renderer.render(scene, camera);
+    }
+
+    // 5. Handle Window Resizing smoothly
+    window.addEventListener('resize', onWindowResize, false);
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Start simulation
+    animate();
+</script>
+
+</body>
+</html>
