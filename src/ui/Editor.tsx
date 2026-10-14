@@ -17,6 +17,7 @@ export function Editor() {
   const blobRef = useRef<Blob | null>(null);
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [notice, setNotice] = useState<string | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
 
   useEffect(() => {
     renderer?.setCorners(cornersRef.current);
@@ -49,6 +50,10 @@ export function Editor() {
     [renderer],
   );
 
+  const resetCorners = () => {
+    if (onCornersChange(INITIAL)) setResetSignal((n) => n + 1);
+  };
+
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -74,7 +79,9 @@ export function Editor() {
     <div className="fixed inset-0 touch-none select-none overflow-hidden bg-black text-white">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
-      {mode === 'edit' && <PinOverlay cornersRef={cornersRef} onChange={onCornersChange} />}
+      {mode === 'edit' && (
+        <PinOverlay cornersRef={cornersRef} onChange={onCornersChange} resetSignal={resetSignal} />
+      )}
 
       {mode === 'edit' ? (
         <div className="absolute inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-2 bg-black/70 p-3 text-sm backdrop-blur">
@@ -88,6 +95,9 @@ export function Editor() {
           </label>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={() => setMode('play')}>
             Play mode
+          </button>
+          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={resetCorners}>
+            Reset corners
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
