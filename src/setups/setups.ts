@@ -138,7 +138,7 @@ export function fileNameFor(name: string): string {
   const slug = name
     .toLowerCase()
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '') // drop accents (é -> e)
+    .replace(/[\u0300-\u036f]/g, '') // drop accents (é -> e)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, NAME_MAX)

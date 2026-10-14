@@ -192,7 +192,7 @@ describe('fileNameFor', () => {
     expect(fileNameFor('Café Ünï')).toBe('hypermapping-cafe-uni.json');
     expect(fileNameFor('')).toBe('hypermapping-setup.json');
     expect(fileNameFor('!!!')).toBe('hypermapping-setup.json');
-    expect(fileNameFor('x'.repeat(100)).length).toBeLessThanOrEqual('hypermapping-.json'.length + 40);
+    expect(fileNameFor('x'.repeat(100))).toBe('hypermapping-' + 'x'.repeat(40) + '.json');
   });
 });
 
