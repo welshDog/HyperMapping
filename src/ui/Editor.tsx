@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
+import { createPatternSource, wantsPattern, type PatternSource } from '../sources/pattern';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
@@ -34,6 +35,10 @@ export function Editor() {
   const channelRef = useRef<BroadcastChannel | null>(null);
   const videoRef = useRef<VideoHandle | null>(null);
   const blobRef = useRef<Blob | null>(null);
+  const patternRef = useRef<PatternSource | null>(null);
+  const [patternAvailable, setPatternAvailable] = useState(true); // false when the browser cannot make the pattern
+  const [patternForce, setPatternForce] = useState(false); // show the pattern even when a video is loaded; not saved
+  const patternForceRef = useRef(false); // read by the channel effect and applySource
   const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
@@ -84,12 +89,43 @@ export function Editor() {
     renderer?.setSurfaces(surfacesRef.current);
   }, [renderer]);
 
+  /** Give the renderer the test pattern or the video, whichever should be showing. */
+  const applySource = useCallback(() => {
+    if (!renderer) return;
+    const pattern = patternRef.current;
+    const video = videoRef.current;
+    const source = wantsPattern(patternForceRef.current, video !== null) && pattern ? pattern.video : video ? video.video : null;
+    renderer.setVideo(source);
+  }, [renderer]);
+
+  // The test pattern source lives as long as the renderer; it is shown while there is no video.
+  useEffect(() => {
+    if (!renderer) return;
+    const source = createPatternSource();
+    patternRef.current = source;
+    setPatternAvailable(source !== null);
+    applySource();
+    return () => {
+      source?.dispose();
+      if (patternRef.current === source) patternRef.current = null;
+    };
+  }, [renderer, applySource]);
+
+  const togglePattern = () => {
+    const next = !patternForce;
+    patternForceRef.current = next;
+    setPatternForce(next);
+    channelRef.current?.postMessage({ type: 'pattern', on: next });
+    applySource();
+  };
+
   // Autoplay can be refused, and backgrounding pauses the video: a paused video
   // would otherwise show its first frame forever. Any tap, or coming back to the
   // page, restarts it.
   const resumeVideo = useCallback(() => {
     const v = videoRef.current?.video;
     if (v?.paused) v.play().catch(() => {});
+    patternRef.current?.ensurePlaying();
   }, []);
 
   useEffect(() => {
@@ -112,11 +148,13 @@ export function Editor() {
       if (msg?.type !== 'hello') return;
       // A new output window asked for everything we have.
       ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
+      ch.postMessage({ type: 'pattern', on: patternForceRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
     // An output window that was already open (e.g. this editor was reloaded) never sends
     // a new hello, so push our state once now.
     ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
+    ch.postMessage({ type: 'pattern', on: patternForceRef.current });
     if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
@@ -217,7 +255,7 @@ export function Editor() {
       videoRef.current?.dispose();
       videoRef.current = handle;
       blobRef.current = file;
-      renderer.setVideo(handle.video);
+      applySource();
       channelRef.current?.postMessage({ type: 'video', blob: file });
       if (handle.playing) {
         setNotice(null);
@@ -304,6 +342,15 @@ export function Editor() {
             onClick={() => setGlue((g) => !g)}
           >
             Glue: {glue ? 'on' : 'off'}
+          </button>
+          <button
+            aria-pressed={patternForce}
+            disabled={!patternAvailable}
+            title={patternAvailable ? undefined : 'Not supported in this browser'}
+            className={`rounded-lg px-4 py-3 font-medium min-w-[9rem] disabled:opacity-40 ${patternForce ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
+            onClick={togglePattern}
+          >
+            Test pattern: {patternForce ? 'on' : 'off'}
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window

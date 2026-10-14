@@ -26,6 +26,7 @@ then open `https://localhost:5173`.
 - **Play mode** hides every control (tap the invisible top-left square to come back).
 - **Open output window** opens `#output` (desktop/tablet: drag it to the projector and click once for fullscreen).
 - `?renderer=webgl2` or `?renderer=webgpu` forces a backend.
+- With no video loaded the app shows a built-in **test pattern** (a grid with lettered columns and numbered rows, corner labels, a TOP arrow, a circle, a word that reads wrong if mirrored, and a blinking dot that shows it is live), in the app, the Output window and the simulator, so you can line up pins and check slices without a video. **Test pattern** in the toolbar forces it on even when a video is loaded. If your browser cannot make it, the button is greyed out and the picture stays black until you load a video.
 
 ## Mapping a box (several faces)
 
