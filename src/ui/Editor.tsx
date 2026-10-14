@@ -7,6 +7,8 @@ import { PinOverlay } from './PinOverlay';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
 
+const TAP_TO_START = 'Tap anywhere to start the video';
+
 const INITIAL: Corners = { tl: [0.2, 0.2], tr: [0.8, 0.2], br: [0.8, 0.8], bl: [0.2, 0.8] };
 
 export function Editor() {
@@ -24,6 +26,22 @@ export function Editor() {
   useEffect(() => {
     renderer?.setCorners(cornersRef.current);
   }, [renderer]);
+
+  // Autoplay can be refused, and backgrounding pauses the video: a paused video
+  // would otherwise show its first frame forever. Any tap, or coming back to the
+  // page, restarts it.
+  const resumeVideo = useCallback(() => {
+    const v = videoRef.current?.video;
+    if (v?.paused) v.play().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resumeVideo();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [resumeVideo]);
 
   useEffect(() => {
     const ch = new BroadcastChannel(CHANNEL);
@@ -67,7 +85,14 @@ export function Editor() {
       blobRef.current = file;
       renderer.setVideo(handle.video);
       channelRef.current?.postMessage({ type: 'video', blob: file });
-      setNotice(null);
+      if (handle.playing) {
+        setNotice(null);
+      } else {
+        setNotice(TAP_TO_START);
+        handle.video.addEventListener('playing', () => setNotice((n) => (n === TAP_TO_START ? null : n)), {
+          once: true,
+        });
+      }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not load that video');
     }
@@ -90,7 +115,11 @@ export function Editor() {
   };
 
   return (
-    <div className="fixed inset-0 touch-none select-none overflow-hidden bg-black text-white">
+    // Capture phase so a tap on a pin or a toolbar button also counts as "tap anywhere".
+    <div
+      className="fixed inset-0 touch-none select-none overflow-hidden bg-black text-white"
+      onPointerDownCapture={resumeVideo}
+    >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
       {mode === 'edit' && (
