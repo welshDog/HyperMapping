@@ -35,9 +35,14 @@ function solve8(m: number[][]): number[] | null {
       for (let c = col; c <= n; c++) m[r][c] -= f * m[col][c];
     }
   }
-  return m.map((row, i) => row[n] / row[i]);
+  const out = m.map((row, i) => row[n] / row[i]);
+  return out.every(Number.isFinite) ? out : null;
 }
 
+/**
+ * Precondition: `h` must come from a quad that passed `isValidQuad`. Otherwise
+ * w can change sign or hit 0 across the source square and results can be Infinity.
+ */
 export function applyHomography(h: Mat3, [x, y]: Vec2): Vec2 {
   const w = h[6] * x + h[7] * y + h[8];
   return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];

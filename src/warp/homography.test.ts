@@ -35,4 +35,12 @@ describe('computeHomography', () => {
   it('returns null when the destination corners are collinear', () => {
     expect(computeHomography(SQ, [[0, 0], [1, 1], [2, 2], [3, 3]])).toBeNull();
   });
+
+  it('returns null when a destination coordinate is NaN', () => {
+    expect(computeHomography(SQ, [[0, 0], [NaN, 0], [1, 1], [0, 1]])).toBeNull();
+  });
+
+  it('returns null when a destination coordinate is Infinity', () => {
+    expect(computeHomography(SQ, [[0, 0], [1, 0], [Infinity, 1], [0, 1]])).toBeNull();
+  });
 });

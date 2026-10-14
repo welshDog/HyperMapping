@@ -29,5 +29,7 @@ export function isValidQuad(c: Corners, minArea = 1e-4): boolean {
 
 /** Keep a dragged corner within a sane range around the surface. */
 export function clampCorner(p: Vec2, min = -0.5, max = 1.5): Vec2 {
-  return [Math.min(max, Math.max(min, p[0])), Math.min(max, Math.max(min, p[1]))];
+  // NaN (e.g. zero-width SVG division) falls back to the centre; +/-Infinity still clamps.
+  const c = (v: number) => Math.min(max, Math.max(min, Number.isNaN(v) ? 0.5 : v));
+  return [c(p[0]), c(p[1])];
 }

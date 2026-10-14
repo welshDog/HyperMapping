@@ -33,4 +33,10 @@ describe('clampCorner', () => {
   it('leaves in-range points alone', () => {
     expect(clampCorner([0.3, 0.4])).toEqual([0.3, 0.4]);
   });
+  it('maps NaN components to 0.5 and still clamps the other axis', () => {
+    expect(clampCorner([NaN, 0.2])).toEqual([0.5, 0.2]);
+  });
+  it('clamps +/-Infinity to max/min', () => {
+    expect(clampCorner([Infinity, -Infinity])).toEqual([1.5, -0.5]);
+  });
 });
