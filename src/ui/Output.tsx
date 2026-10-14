@@ -2,11 +2,13 @@ import { useEffect, useRef } from 'react';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { useRenderer } from './useRenderer';
+import { useWakeLock } from './wakeLock';
 
 /** Projector view: nothing but the warped video. Click once to go fullscreen. */
 export function Output() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { renderer, error } = useRenderer(canvasRef);
+  useWakeLock(true); // a projector screen must never dim
 
   useEffect(() => {
     if (!renderer) return;

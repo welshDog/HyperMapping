@@ -5,6 +5,7 @@ import { isValidQuad } from '../warp/quad';
 import type { Corners } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
 import { useRenderer } from './useRenderer';
+import { useWakeLock } from './wakeLock';
 
 const INITIAL: Corners = { tl: [0.2, 0.2], tr: [0.8, 0.2], br: [0.8, 0.8], bl: [0.2, 0.8] };
 
@@ -18,6 +19,7 @@ export function Editor() {
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [notice, setNotice] = useState<string | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
+  useWakeLock(mode === 'play'); // the detached video gets no playback wake lock of its own
 
   useEffect(() => {
     renderer?.setCorners(cornersRef.current);
