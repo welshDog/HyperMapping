@@ -138,7 +138,8 @@ export function SetupsPanel({ store, getSurfaces, hasVideo, onLoad, onStartFresh
     }
   };
 
-  const btn = 'rounded-lg bg-zinc-700 px-3 py-3 text-sm disabled:opacity-40';
+  const btnBase = 'rounded-lg px-3 py-3 text-sm disabled:opacity-40';
+  const btn = `${btnBase} bg-zinc-700`;
 
   return (
     <div className="absolute inset-0 z-40 flex flex-col items-center overflow-auto bg-black/90 p-6">
@@ -157,7 +158,7 @@ export function SetupsPanel({ store, getSurfaces, hasVideo, onLoad, onStartFresh
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <button className={`${btn} bg-cyan-500 text-black`} disabled={!store} onClick={save}>
+          <button className={`${btnBase} bg-cyan-500 text-black`} disabled={!store} onClick={save}>
             Save
           </button>
         </div>
