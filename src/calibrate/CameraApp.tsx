@@ -22,6 +22,7 @@ interface Scan {
   preview: string;
 }
 
+const SYNC_TIMEOUT_MS = 10_000;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The phone side: shows the camera, answers the laptop's scan, decodes it and sends the map back. */
@@ -38,13 +39,14 @@ export function CameraApp() {
   const movedRef = useRef(false);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const startedRef = useRef(false);
+  const mountedRef = useRef(true);
   const streamRef = useRef<MediaStream | null>(null);
   const motionSeenRef = useRef(false);
   const [motionChecked, setMotionChecked] = useState(true);
   const [stage, setStage] = useState<Stage>(session ? 'start' : 'error');
   const [status, setStatus] = useState(session ? 'Tap Start, then point the phone at the box.' : 'This link is not valid: scan the QR code again.');
   const [progress, setProgress] = useState('');
-  useWakeLock(stage === 'live' || stage === 'scanning');
+  useWakeLock(stage === 'live' || stage === 'scanning' || stage === 'done');
 
   const send = (msg: CalibMsg) => void relayRef.current?.send(encodeCalibMsg(msg));
   /** Like send, but reports whether the server accepted it. */
@@ -84,7 +86,10 @@ export function CameraApp() {
     scan.frames.push(gray);
     if (movedRef.current) return fail('moved', undefined, 'The phone moved during the scan. Hold it still and try again.');
     setProgress(`${scan.frames.length} / ${scan.total}`);
-    send({ type: 'frame-done', frame });
+    // Wait for the laptop to be told before decoding, so scan-result can never overtake the last frame-done.
+    const told = await sendChecked({ type: 'frame-done', frame });
+    if (scanRef.current !== scan) return;
+    if (!told) return fail('other', 'could not reach the laptop', 'Lost the connection to the laptop. Try again.');
     if (scan.frames.length === scan.total) await finish(scan);
   };
 
@@ -149,14 +154,21 @@ export function CameraApp() {
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
+      if (!mountedRef.current) {
+        // The page went away while the permission prompt was open: do not keep the camera.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = stream;
       const video = videoRef.current!;
       video.srcObject = stream;
       await video.play();
+      if (!mountedRef.current) return;
       const track = stream.getVideoTracks()[0];
       // Best effort: stop the camera re-adjusting its exposure while the projector flashes.
       await track.applyConstraints({ advanced: [{ exposureMode: 'manual' } as MediaTrackConstraintSet] }).catch(() => {});
+      if (!mountedRef.current) return;
       const { w, h } = analysisSize(video.videoWidth, video.videoHeight);
       dimsRef.current = { w, h };
       const canvas = document.createElement('canvas');
@@ -168,8 +180,27 @@ export function CameraApp() {
       relayRef.current = relay;
       relay.onMessage(onMessage);
       // Only announce ourselves once old mailbox contents are skipped, so a stale scan can never replay.
-      await relay.synced;
-      send({ type: 'hello', width: w, height: h });
+      setStatus('Connecting to the laptop…');
+      const synced = await Promise.race([relay.synced.then(() => true), wait(SYNC_TIMEOUT_MS).then(() => false)]);
+      if (!mountedRef.current) return;
+      if (!synced) {
+        relay.close();
+        relayRef.current = null;
+        startedRef.current = false;
+        setStage('error');
+        setStatus('Could not reach the laptop. Check both are on the same Wi-Fi, then tap Start camera again.');
+        return;
+      }
+      const hello = await sendChecked({ type: 'hello', width: w, height: h });
+      if (!mountedRef.current) return;
+      if (!hello) {
+        relay.close();
+        relayRef.current = null;
+        startedRef.current = false;
+        setStage('error');
+        setStatus('The laptop server is busy. Close old calibration tabs or wait a few minutes, then tap Start again.');
+        return;
+      }
       send({ type: 'ready' });
       setStage('live');
       setStatus('Connected. Point the phone at the box, then press Start scan on the laptop.');
@@ -181,6 +212,7 @@ export function CameraApp() {
       }
     } catch (e) {
       stream?.getTracks().forEach((t) => t.stop());
+      if (!mountedRef.current) return;
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
       startedRef.current = false;
@@ -200,7 +232,9 @@ export function CameraApp() {
       }
     };
     window.addEventListener('devicemotion', onMotion);
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       window.removeEventListener('devicemotion', onMotion);
       relayRef.current?.close();
       // React clears videoRef before passive cleanups run, so the stream is kept in its own ref.

@@ -26,7 +26,9 @@ export function createRelayClient(session: string, role: 'laptop' | 'phone', fet
         const res = await fetchFn(`/calib/${session}/${mine}?after=latest`, { signal: controller.signal, cache: 'no-store' });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { cursor?: unknown };
-        last = typeof data.cursor === 'number' && Number.isFinite(data.cursor) && data.cursor > 0 ? data.cursor : 0;
+        // A missing or malformed cursor is a failed sync: retry rather than guess.
+        if (typeof data.cursor !== 'number' || !Number.isFinite(data.cursor) || data.cursor < 0) throw new Error('bad cursor');
+        last = data.cursor;
         return;
       } catch {
         if (closed) return;

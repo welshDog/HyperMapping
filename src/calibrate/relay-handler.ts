@@ -9,6 +9,8 @@ export interface RelayRequest {
 export interface RelayResponse {
   status: number;
   json: unknown;
+  /** True only for a numeric-`after` GET whose message list is empty: the server may hold the request and re-run it. */
+  poll?: boolean;
 }
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -58,7 +60,8 @@ export function handleCalibRequest(mailbox: Mailbox, req: RelayRequest, lanAddre
     }
     const raw = Number(url.searchParams.get('after') ?? '0');
     const after = Number.isFinite(raw) && raw > 0 ? raw : 0;
-    return { status: 200, json: { messages: mailbox.after(session, box, after) } };
+    const messages = mailbox.after(session, box, after);
+    return { status: 200, json: { messages }, poll: messages.length === 0 };
   }
   return { status: 405, json: { error: 'method' } };
 }

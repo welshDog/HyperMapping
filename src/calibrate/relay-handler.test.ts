@@ -48,6 +48,15 @@ describe('handleCalibRequest', () => {
     expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=${seq - 1}`), lan).json).toMatchObject({ messages: [{ body: 'old' }] });
     expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=${seq}`), lan).json).toEqual({ messages: [] });
   });
+  it('only an empty numeric-after GET asks the server to hold the request', () => {
+    const mb = createMailbox(() => 0);
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=latest`), lan).poll).toBeFalsy();
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=0`), lan).poll).toBe(true);
+    handleCalibRequest(mb, req('POST', `/calib/${S}/to-phone`, 'x'), lan);
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=0`), lan).poll).toBeFalsy();
+    expect(handleCalibRequest(mb, req('POST', `/calib/${S}/to-phone`, 'y'), lan).poll).toBeFalsy();
+    expect(handleCalibRequest(mb, req('GET', '/calib/info'), lan).poll).toBeFalsy();
+  });
 });
 
 describe('chooseLanAddresses', () => {

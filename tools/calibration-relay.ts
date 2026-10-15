@@ -69,12 +69,12 @@ export function calibrationRelay(): Plugin {
         const lan = new URL(url, 'http://relay.invalid').pathname === '/calib/info' ? lanAddresses() : [];
         const run = () => handleCalibRequest(mailbox, { method, url, body }, lan);
         let r = run();
-        if (method === 'GET' && r.status === 200 && Array.isArray((r.json as { messages?: unknown }).messages)) {
+        if (r.poll === true) {
           // Long poll: wait for a message, up to 20 s, giving up if the client goes away.
           let closed = false;
           res.on('close', () => (closed = true));
           const until = Date.now() + LONG_POLL_MS;
-          while ((r.json as { messages: unknown[] }).messages.length === 0 && Date.now() < until && !closed) {
+          while (r.poll === true && Date.now() < until && !closed) {
             await new Promise((resolve) => setTimeout(resolve, POLL_MS));
             r = run();
           }
