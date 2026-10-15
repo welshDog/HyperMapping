@@ -39,6 +39,15 @@ describe('handleCalibRequest', () => {
     for (const c of 'abcd') handleCalibRequest(mb, req('POST', `/calib/${c.repeat(32)}/to-phone`, 'x'), lan);
     expect(handleCalibRequest(mb, req('POST', `/calib/${'e'.repeat(32)}/to-phone`, 'x'), lan).status).toBe(429);
   });
+  it('after=latest returns no messages and the current cursor', () => {
+    const mb = createMailbox(() => 0);
+    handleCalibRequest(mb, req('POST', `/calib/${S}/to-phone`, 'old'), lan);
+    const seq = mb.after(S, 'to-phone', 0)[0].seq;
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=latest`), lan)).toEqual({ status: 200, json: { messages: [], cursor: seq } });
+    expect(handleCalibRequest(mb, req('GET', `/calib/${'a'.repeat(32)}/to-phone?after=latest`), lan).json).toEqual({ messages: [], cursor: 0 });
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=${seq - 1}`), lan).json).toMatchObject({ messages: [{ body: 'old' }] });
+    expect(handleCalibRequest(mb, req('GET', `/calib/${S}/to-phone?after=${seq}`), lan).json).toEqual({ messages: [] });
+  });
 });
 
 describe('chooseLanAddresses', () => {

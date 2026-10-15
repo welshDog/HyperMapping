@@ -53,6 +53,9 @@ export function handleCalibRequest(mailbox: Mailbox, req: RelayRequest, lanAddre
     return { status: 400, json: { error: 'bad request' } };
   }
   if (req.method === 'GET') {
+    if (url.searchParams.get('after') === 'latest') {
+      return { status: 200, json: { messages: [], cursor: mailbox.latest(session, box) } };
+    }
     const raw = Number(url.searchParams.get('after') ?? '0');
     const after = Number.isFinite(raw) && raw > 0 ? raw : 0;
     return { status: 200, json: { messages: mailbox.after(session, box, after) } };

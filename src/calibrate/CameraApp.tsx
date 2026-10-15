@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWakeLock } from '../ui/wakeLock';
+import { analysisSize } from './analysis-size';
 import { decodeScan } from './decode';
 import { accumulateLuma, finishLuma } from './luma';
 import { CAPTURE_FRAMES, frameCount } from './patterns';
@@ -7,7 +8,6 @@ import { encodeCalibMsg, parseCalibMsg, type CalibMsg } from './protocol';
 import { createRelayClient, type RelayClient } from './relay-client';
 import { MOTION_LIMITS, isMoving, magnitude } from './steady';
 
-const ANALYSIS_WIDTH = 640;
 const FRAME_GAP_MS = 40;
 /** Under this share of lit pixels the scan is treated as "the projector is not on the box". */
 const MIN_LIT_SHARE = 0.05;
@@ -38,12 +38,17 @@ export function CameraApp() {
   const movedRef = useRef(false);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const startedRef = useRef(false);
+  const streamRef = useRef<MediaStream | null>(null);
+  const motionSeenRef = useRef(false);
+  const [motionChecked, setMotionChecked] = useState(true);
   const [stage, setStage] = useState<Stage>(session ? 'start' : 'error');
   const [status, setStatus] = useState(session ? 'Tap Start, then point the phone at the box.' : 'This link is not valid: scan the QR code again.');
   const [progress, setProgress] = useState('');
   useWakeLock(stage === 'live' || stage === 'scanning');
 
   const send = (msg: CalibMsg) => void relayRef.current?.send(encodeCalibMsg(msg));
+  /** Like send, but reports whether the server accepted it. */
+  const sendChecked = async (msg: CalibMsg): Promise<boolean> => (await relayRef.current?.send(encodeCalibMsg(msg))) ?? false;
 
   const fail = (reason: 'moved' | 'camera' | 'timeout' | 'dark' | 'other', detail?: string, text?: string) => {
     scanRef.current = null;
@@ -66,9 +71,10 @@ export function CameraApp() {
     return finishLuma(acc, CAPTURE_FRAMES);
   };
 
-  const capture = async (frame: number) => {
+  const capture = async (frame: number, of: number) => {
     const scan = scanRef.current;
     if (!scan) return;
+    if (of !== scan.total) return fail('other', 'frame count mismatch');
     if (frame !== scan.frames.length) return fail('other', 'frame out of order');
     if (movedRef.current) return fail('moved', undefined, 'The phone moved during the scan. Hold it still and try again.');
     const gray = await grabGray();
@@ -96,7 +102,8 @@ export function CameraApp() {
         return fail('dark', undefined, 'The projector picture was not seen. Aim at the box and dim the room.');
       }
       scanRef.current = null;
-      send({ type: 'scan-result', map, preview: scan.preview });
+      const sent = await sendChecked({ type: 'scan-result', map, preview: scan.preview });
+      if (!sent) return fail('other', 'result too large or server refused it', 'Could not send the scan to the laptop. Try again.');
       setStage('done');
       setStatus('Done. Tap the box corners on the laptop.');
     } catch (e) {
@@ -116,8 +123,9 @@ export function CameraApp() {
       setStatus('Scanning: hold the phone still.');
       setProgress(`0 / ${total}`);
     } else if (msg.type === 'show') {
-      queueRef.current = queueRef.current.then(() => capture(msg.frame)).catch(() => fail('other', 'capture failed'));
+      queueRef.current = queueRef.current.then(() => capture(msg.frame, msg.of)).catch(() => fail('other', 'capture failed'));
     } else if (msg.type === 'scan-cancel') {
+      if (!scanRef.current) return;
       scanRef.current = null;
       setStage('live');
       setStatus('Scan cancelled.');
@@ -127,38 +135,54 @@ export function CameraApp() {
   const start = async () => {
     if (!session || startedRef.current) return;
     startedRef.current = true;
+    let stream: MediaStream | null = null;
     try {
       // iOS asks for motion access from a tap. Guard: some browsers have no DeviceMotionEvent at all.
-      if (typeof DeviceMotionEvent !== 'undefined') {
+      let motionOk = typeof DeviceMotionEvent !== 'undefined';
+      if (motionOk) {
         const DME = DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> };
-        if (typeof DME.requestPermission === 'function') await DME.requestPermission().catch(() => {});
+        if (typeof DME.requestPermission === 'function') motionOk = (await DME.requestPermission().catch(() => 'denied')) === 'granted';
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
+      motionSeenRef.current = false;
+      setMotionChecked(motionOk);
+      stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = stream;
       const video = videoRef.current!;
       video.srcObject = stream;
       await video.play();
       const track = stream.getVideoTracks()[0];
       // Best effort: stop the camera re-adjusting its exposure while the projector flashes.
       await track.applyConstraints({ advanced: [{ exposureMode: 'manual' } as MediaTrackConstraintSet] }).catch(() => {});
-      if (!video.videoWidth || !video.videoHeight) throw new Error('the camera gave no picture');
-      const w = Math.min(ANALYSIS_WIDTH, video.videoWidth);
-      const h = Math.round((w * video.videoHeight) / video.videoWidth);
+      const { w, h } = analysisSize(video.videoWidth, video.videoHeight);
       dimsRef.current = { w, h };
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
       canvasRef.current = canvas;
-      const relay = createRelayClient(session, 'phone');
+      relayRef.current?.close();
+      const relay = createRelayClient(session, 'phone', undefined, { skipBacklog: true });
       relayRef.current = relay;
       relay.onMessage(onMessage);
+      // Only announce ourselves once old mailbox contents are skipped, so a stale scan can never replay.
+      await relay.synced;
       send({ type: 'hello', width: w, height: h });
       send({ type: 'ready' });
       setStage('live');
       setStatus('Connected. Point the phone at the box, then press Start scan on the laptop.');
+      if (motionOk) {
+        // No motion events after a second means no sensor (or no permission): say so.
+        setTimeout(() => {
+          if (!motionSeenRef.current) setMotionChecked(false);
+        }, 1000);
+      }
     } catch (e) {
+      stream?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
       startedRef.current = false;
       setStage('error');
       setStatus(e instanceof Error ? `Could not start the camera: ${e.message}` : 'Could not start the camera.');
@@ -167,6 +191,7 @@ export function CameraApp() {
 
   useEffect(() => {
     const onMotion = (ev: DeviceMotionEvent) => {
+      motionSeenRef.current = true;
       if (!scanRef.current) return;
       const r = ev.rotationRate;
       const a = ev.acceleration;
@@ -178,8 +203,9 @@ export function CameraApp() {
     return () => {
       window.removeEventListener('devicemotion', onMotion);
       relayRef.current?.close();
-      const stream = videoRef.current?.srcObject as MediaStream | null;
-      stream?.getTracks().forEach((t) => t.stop());
+      // React clears videoRef before passive cleanups run, so the stream is kept in its own ref.
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, []);
 
@@ -189,7 +215,8 @@ export function CameraApp() {
       <div className="absolute inset-x-0 bottom-0 space-y-2 bg-black/70 p-4 text-base">
         <p>{status}</p>
         {stage === 'scanning' && <p className="text-zinc-300">{progress}</p>}
-        {stage === 'start' && (
+        {!motionChecked && (stage === 'live' || stage === 'scanning') && <p className="text-amber-300">Motion check is off: hold the phone very still.</p>}
+        {(stage === 'start' || (stage === 'error' && session)) && (
           <button className="rounded-lg bg-cyan-500 px-5 py-3 font-medium text-black" onClick={() => void start()}>
             Start camera
           </button>

@@ -20,6 +20,8 @@ interface Session {
 export interface Mailbox {
   post(session: string, box: Box, body: string): 'ok' | 'bad' | 'too-big' | 'full';
   after(session: string, box: Box, afterSeq: number): Stored[];
+  /** The highest sequence number currently in a box, or 0. */
+  latest(session: string, box: Box): number;
 }
 
 const isBox = (b: unknown): b is Box => b === 'to-phone' || b === 'to-laptop';
@@ -63,6 +65,15 @@ export function createMailbox(clock: () => number = Date.now): Mailbox {
       if (!s) return [];
       s.touched = clock();
       return s.boxes[box].filter((m) => m.seq > afterSeq);
+    },
+    latest(session, box) {
+      if (!SESSION.test(session) || !isBox(box)) return 0;
+      sweep();
+      const s = sessions.get(session);
+      if (!s) return 0;
+      s.touched = clock();
+      const list = s.boxes[box];
+      return list.length ? list[list.length - 1].seq : 0;
     },
   };
 }

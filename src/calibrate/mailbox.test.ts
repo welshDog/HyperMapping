@@ -85,4 +85,14 @@ describe('mailbox', () => {
     second.post(S1, 'to-phone', 'x');
     expect(second.after(S1, 'to-phone', 0)[0].seq).toBeGreaterThan(first.after(S1, 'to-phone', 0)[0].seq);
   });
+  it('latest returns the highest seq in a box, or 0', () => {
+    const mb = createMailbox(() => 0);
+    expect(mb.latest(S1, 'to-phone')).toBe(0);
+    mb.post(S1, 'to-phone', 'a');
+    mb.post(S1, 'to-phone', 'b');
+    const all = mb.after(S1, 'to-phone', 0);
+    expect(mb.latest(S1, 'to-phone')).toBe(all[1].seq);
+    expect(mb.latest(S1, 'to-laptop')).toBe(0);
+    expect(mb.latest('bad', 'to-phone')).toBe(0);
+  });
 });
