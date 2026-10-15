@@ -187,4 +187,32 @@ describe('parseMsg', () => {
       for (const b of bads) expect(parseMsg(b), JSON.stringify(b)).toBeNull();
     });
   });
+  describe('audio message', () => {
+    it('accepts a valid audio message', () => {
+      expect(parseMsg({ type: 'audio', bass: 0.5, treble: 0.2, vol: 1 })).toEqual({ type: 'audio', bass: 0.5, treble: 0.2, vol: 1 });
+    });
+    it('clamps to 0..1', () => {
+      expect(parseMsg({ type: 'audio', bass: 1.7, treble: -0.3, vol: 0.5 })).toEqual({ type: 'audio', bass: 1, treble: 0, vol: 0.5 });
+    });
+    it('drops extra fields and returns a fresh object', () => {
+      const input = { type: 'audio', bass: 0.1, treble: 0.2, vol: 0.3, extra: 1 };
+      const m = parseMsg(input);
+      expect(m).toEqual({ type: 'audio', bass: 0.1, treble: 0.2, vol: 0.3 });
+      expect(m).not.toBe(input);
+    });
+    it('rejects malformed audio messages', () => {
+      const bads = [
+        { type: 'audio' },
+        { type: 'audio', bass: 0.5, treble: 0.5 },
+        { type: 'audio', bass: 0.5, vol: 0.5 },
+        { type: 'audio', treble: 0.5, vol: 0.5 },
+        { type: 'audio', bass: NaN, treble: 0.5, vol: 0.5 },
+        { type: 'audio', bass: 0.5, treble: Infinity, vol: 0.5 },
+        { type: 'audio', bass: 0.5, treble: 0.5, vol: -Infinity },
+        { type: 'audio', bass: '0.5', treble: 0.5, vol: 0.5 },
+        { type: 'audio', bass: 0.5, treble: null, vol: 0.5 },
+      ];
+      for (const b of bads) expect(parseMsg(b), JSON.stringify(b)).toBeNull();
+    });
+  });
 });

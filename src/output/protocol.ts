@@ -11,10 +11,14 @@ export type Msg =
   | { type: 'layout'; surfaces: Surface[] } // simulator -> editor: "use this face layout"
   | { type: 'pattern'; on: boolean } // editor -> others: show the test pattern even when a video is loaded
   | { type: 'generator'; state: GeneratorState } // editor -> output: random-visuals generator state
+  | { type: 'audio'; bass: number; treble: number; vol: number } // editor -> output: live sound levels, each 0..1
   | { type: 'video'; blob: Blob } // editor -> output (structured-clone copy)
   | { type: 'probe' } // editor -> output: "tell me your size"
   | { type: 'output-size'; w: number; h: number; fullscreen: boolean } // output -> editor
   | { type: 'scan-frame'; spec: FrameSpec | null; gw: number; gh: number; pw: number; ph: number }; // editor -> output: calibration frame, or null to go back
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 const isDim = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16384;
 
@@ -49,6 +53,10 @@ export function parseMsg(data: unknown): Msg | null {
       };
       return { type: 'generator', state };
     }
+    case 'audio':
+      return isNum(d.bass) && isNum(d.treble) && isNum(d.vol)
+        ? { type: 'audio', bass: clamp01(d.bass), treble: clamp01(d.treble), vol: clamp01(d.vol) }
+        : null;
     case 'video':
       return d.blob instanceof Blob ? { type: 'video', blob: d.blob } : null;
     case 'probe':
