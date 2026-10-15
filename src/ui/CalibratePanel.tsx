@@ -5,6 +5,7 @@ import { buildCameraLink, newSessionId } from '../calibrate/link';
 import { SETTLE_MS, STEP_PX, frameCount, frameSpec } from '../calibrate/patterns';
 import { encodeCalibMsg, parseCalibMsg, type CalibMsg } from '../calibrate/protocol';
 import { createRelayClient, type RelayClient } from '../calibrate/relay-client';
+import { createScanGate, type ScanGate } from '../calibrate/scan-gate';
 import { runScan } from '../calibrate/scan-driver';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import type { Surface } from '../surfaces/types';
@@ -21,6 +22,7 @@ type Stage = 'connect' | 'scanning' | 'decoding' | 'tap';
 interface ActiveScan {
   gw: number;
   gh: number;
+  gate: ScanGate;
 }
 const FRAME_DONE_TIMEOUT_MS = 8000;
 const DECODE_TIMEOUT_MS = 30_000;
@@ -81,6 +83,7 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
         const w = frameWaitRef.current;
         if (w && w.frame === msg.frame) {
           frameWaitRef.current = null;
+          activeScanRef.current?.gate.frameDone(msg.frame);
           w.resolve();
         }
       } else if (msg.type === 'error') {
@@ -102,7 +105,7 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
       } else if (msg.type === 'scan-result') {
         const active = activeScanRef.current;
         // Only a result for the scan we are running; anything else is stale or unexpected.
-        if (!active || msg.map.gw !== active.gw || msg.map.gh !== active.gh) return;
+        if (!active || !active.gate.canAcceptResult() || msg.map.gw !== active.gw || msg.map.gh !== active.gh) return;
         activeScanRef.current = null;
         clearDecodeTimer();
         signalRef.current.cancelled = true; // the scan is over; stop the driver
@@ -181,7 +184,7 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
     const total = frameCount(gw, gh);
     const signal = { cancelled: false };
     signalRef.current = signal;
-    const scan: ActiveScan = { gw, gh };
+    const scan: ActiveScan = { gw, gh, gate: createScanGate(total) };
     activeScanRef.current = scan;
     setMessage(null);
     setStage('scanning');
@@ -217,7 +220,7 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
         },
         signal,
       );
-      showNormal();
+      if (signalRef.current === signal) showNormal();
       // Only move on if this scan is still the running one (a result may already have arrived).
       if (outcome === 'done' && activeScanRef.current === scan) {
         setStage((s) => (s === 'scanning' ? 'decoding' : s));
