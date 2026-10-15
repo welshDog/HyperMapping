@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { createMailbox } from '../src/calibrate/mailbox';
 import { MAX_BODY_CHARS } from '../src/calibrate/protocol';
-import { handleCalibRequest } from '../src/calibrate/relay-handler';
+import { chooseLanAddresses, handleCalibRequest } from '../src/calibrate/relay-handler';
 
 const POLL_MS = 250;
 const LONG_POLL_MS = 20_000;
@@ -13,7 +13,7 @@ function lanAddresses(): string[] {
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list ?? []) if (i.family === 'IPv4' && !i.internal) out.push(i.address);
   }
-  return out;
+  return chooseLanAddresses(out);
 }
 
 function readBody(req: IncomingMessage): Promise<string | null> {

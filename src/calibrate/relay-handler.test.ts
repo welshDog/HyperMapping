@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createMailbox } from './mailbox';
-import { handleCalibRequest } from './relay-handler';
+import { chooseLanAddresses, handleCalibRequest } from './relay-handler';
 
 const S = 'f'.repeat(32);
 const lan = ['192.168.1.20'];
@@ -38,5 +38,30 @@ describe('handleCalibRequest', () => {
     const mb = createMailbox(() => 0);
     for (const c of 'abcd') handleCalibRequest(mb, req('POST', `/calib/${c.repeat(32)}/to-phone`, 'x'), lan);
     expect(handleCalibRequest(mb, req('POST', `/calib/${'e'.repeat(32)}/to-phone`, 'x'), lan).status).toBe(429);
+  });
+});
+
+describe('chooseLanAddresses', () => {
+  it('drops link-local and keeps the real LAN address', () => {
+    expect(chooseLanAddresses(['169.254.83.107', '192.168.50.129'])).toEqual(['192.168.50.129']);
+  });
+  it('ranks 192.168 before 10.x before 172.16-31 before others, keeping order within a class', () => {
+    expect(chooseLanAddresses(['8.8.8.8', '172.20.0.5', '10.0.0.2', '192.168.1.9', '10.0.0.1', '192.168.1.2'])).toEqual([
+      '192.168.1.9',
+      '192.168.1.2',
+      '10.0.0.2',
+      '10.0.0.1',
+      '172.20.0.5',
+      '8.8.8.8',
+    ]);
+  });
+  it('counts 172.16-31 as private but not 172.32', () => {
+    expect(chooseLanAddresses(['172.32.0.1', '172.31.0.1'])).toEqual(['172.31.0.1', '172.32.0.1']);
+  });
+  it('drops loopback, 0.0.0.0 and garbage', () => {
+    expect(chooseLanAddresses(['127.0.0.1', '0.0.0.0', 'nope', '1.2.3', '256.1.1.1', '::1', '1.2.3.4.5', '10.0.0.1'])).toEqual(['10.0.0.1']);
+  });
+  it('removes duplicates', () => {
+    expect(chooseLanAddresses(['192.168.1.2', '192.168.1.2'])).toEqual(['192.168.1.2']);
   });
 });

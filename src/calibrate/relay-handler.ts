@@ -11,6 +11,27 @@ export interface RelayResponse {
   json: unknown;
 }
 
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+/** Keep only addresses a phone could use, most likely first: 192.168, then 10, then 172.16-31, then the rest. */
+export function chooseLanAddresses(candidates: string[]): string[] {
+  const classes: string[][] = [[], [], [], []];
+  const seen = new Set<string>();
+  for (const c of candidates) {
+    const m = IPV4.exec(c);
+    if (!m || seen.has(c)) continue;
+    const o = m.slice(1).map(Number);
+    if (o.some((n) => n > 255)) continue;
+    if (o[0] === 127 || o[0] === 0 || (o[0] === 169 && o[1] === 254)) continue;
+    seen.add(c);
+    if (o[0] === 192 && o[1] === 168) classes[0].push(c);
+    else if (o[0] === 10) classes[1].push(c);
+    else if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) classes[2].push(c);
+    else classes[3].push(c);
+  }
+  return classes.flat();
+}
+
 const PATH = /^\/calib\/([0-9a-f]{32})\/(to-phone|to-laptop)$/;
 
 /** Everything the relay does, as a pure function of the request. The Vite plugin only adapts Node to this. */
