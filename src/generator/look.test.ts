@@ -89,6 +89,8 @@ describe('codes', () => {
       }
     }
     expect(lookToCode({ style: 'plasma', seed: 0 })).toBe('P-000000000');
+    // Weighted check for 7F3A92C1 (nibbles 7,15,3,10,9,2,12,1; weights 1,3,5,7,9,11,13,15):
+    // 7 + 45 + 15 + 70 + 81 + 22 + 156 + 15 = 411; 411 mod 16 = 11 = 'B'.
     expect(lookToCode({ style: 'kaleidoscope', seed: 0x7f3a92c1 })).toBe('K-7F3A92C1B');
   });
   it('accepts lowercase, spaces around and a missing dash', () => {
@@ -102,7 +104,7 @@ describe('codes', () => {
     expect(lookFromCode('K-7F3A92C10')).toBeNull();
   });
   it('rejects unknown letter, bad length, non-hex, empty, non-string', () => {
-    expect(lookFromCode('X-7F3A92C1D')).toBeNull();
+    expect(lookFromCode('X-7F3A92C1B')).toBeNull();
     expect(lookFromCode('K-7F3A92C1')).toBeNull();
     expect(lookFromCode('K-7F3A92C1BD')).toBeNull();
     expect(lookFromCode('K')).toBeNull();
@@ -128,5 +130,23 @@ describe('codes', () => {
       }
     }
     expect(checked).toBe(5 * 8 * 15);
+  });
+  it('rejects every adjacent-digit swap of 200 random codes unless the digits differ by exactly 8', () => {
+    const r = mulberry32(99);
+    let swaps = 0;
+    for (let n = 0; n < 200; n++) {
+      const code = lookToCode({ style: LOOK_STYLES[n % 4], seed: randomSeed32(r) });
+      for (let pos = 0; pos < 7; pos++) {
+        const i = 2 + pos;
+        const a = parseInt(code[i], 16);
+        const b = parseInt(code[i + 1], 16);
+        if (a === b) continue; // swapping equal digits gives the same code
+        const swapped = code.slice(0, i) + code[i + 1] + code[i] + code.slice(i + 2);
+        if (Math.abs(a - b) === 8) expect(lookFromCode(swapped)).not.toBeNull();
+        else expect(lookFromCode(swapped)).toBeNull();
+        swaps++;
+      }
+    }
+    expect(swaps).toBeGreaterThan(1000);
   });
 });

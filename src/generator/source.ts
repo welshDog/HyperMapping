@@ -28,6 +28,8 @@ export interface GeneratorSource {
   readonly cheap: boolean;
   /** Store the state to draw from the next frame on (no GL work here). */
   setState(state: GeneratorState): void;
+  /** Only draw while the generator is on AND active (default true): false when another source is showing. */
+  setActive(active: boolean): void;
   /** Restart the stream if the browser paused it (backgrounded tab). */
   ensurePlaying(): void;
   /** Stop the loop, free the GL objects and the context, drop the video. Safe to call twice. */
@@ -193,7 +195,20 @@ export function createGeneratorSource(): GeneratorSource | null {
       g.drawArrays(g.TRIANGLES, 0, 3);
     };
 
-    const wantsFrames = () => !disposed && !broken && state !== null && state.on;
+    let active = true;
+    const wantsFrames = () => !disposed && !broken && state !== null && state.on && active;
+
+    /** Draw one frame right now so the stream has a picture before the loop's first tick. */
+    const drawNow = () => {
+      const s = state;
+      if (!s || disposed || broken || lost || !gl || gl.isContextLost()) return;
+      try {
+        lastDrawAt = performance.now();
+        draw(s);
+      } catch (err) {
+        console.warn('[generator] first frame failed:', err);
+      }
+    };
 
     /** Schedule one frame if the generator is on. Never schedules a second pending frame. */
     const schedule = () => {
@@ -254,8 +269,17 @@ export function createGeneratorSource(): GeneratorSource | null {
       video,
       cheap,
       setState: (next) => {
+        const was = wantsFrames();
         state = next;
+        if (!was && wantsFrames()) drawNow(); // off -> on: no black first frame
         schedule();
+      },
+      setActive: (next) => {
+        const was = wantsFrames();
+        active = next;
+        if (!was && wantsFrames()) drawNow();
+        if (wantsFrames()) schedule();
+        else stopLoop();
       },
       ensurePlaying: () => {
         if (!disposed) ensurePlaying();

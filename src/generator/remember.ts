@@ -15,6 +15,13 @@ export function saveGeneratorState(store: KeyValueStore, state: GeneratorState):
   }
 }
 
+/** Rebuild a stored look as exactly { style, seed } so extra keys never survive. */
+function cleanLook(x: unknown): unknown {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) return x;
+  const o = x as Record<string, unknown>;
+  return { style: o.style, seed: o.seed };
+}
+
 /** The remembered state with `on` false, or a fresh one when nothing usable is stored. Never throws. */
 export function loadGeneratorState(store: KeyValueStore | null, now: number, rng: () => number): GeneratorState {
   const fresh = initialState(now, rng);
@@ -24,7 +31,7 @@ export function loadGeneratorState(store: KeyValueStore | null, now: number, rng
     if (!raw) return fresh;
     const o = JSON.parse(raw) as Record<string, unknown> | null;
     if (typeof o !== 'object' || o === null) return fresh;
-    const candidate = { ...fresh, look: o.look, shuffleSec: o.shuffleSec, stylePick: o.stylePick, on: false };
+    const candidate = { ...fresh, look: cleanLook(o.look), shuffleSec: o.shuffleSec, stylePick: o.stylePick, on: false };
     return isValidState(candidate) ? candidate : fresh;
   } catch {
     return fresh;

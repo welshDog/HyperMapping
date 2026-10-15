@@ -45,6 +45,17 @@ describe('remembered generator state', () => {
     expect(back.changedAt).toBe(5000);
   });
 
+  it('drops extra keys from a stored look', () => {
+    const raw = JSON.stringify({
+      look: { style: 'neon', seed: 77, evil: 'x', __proto__: { y: 1 } },
+      shuffleSec: 15,
+      stylePick: 'auto',
+    });
+    const back = loadGeneratorState(memStore({ [GENERATOR_KEY]: raw }), 5, rng);
+    expect(back.look).toEqual({ style: 'neon', seed: 77 });
+    expect(Object.keys(back.look)).toEqual(['style', 'seed']);
+  });
+
   it('falls back to a fresh state on junk or a throwing store', () => {
     const fresh = initialState(9, rng);
     expect(loadGeneratorState(memStore({ [GENERATOR_KEY]: 'not json' }), 9, rng)).toEqual(fresh);

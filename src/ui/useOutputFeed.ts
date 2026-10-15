@@ -72,6 +72,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
             : kind === 'video' && video
               ? video.video
               : null;
+      generator?.setActive(kind === 'generator');
       renderer.setVideo(source);
     };
     apply();

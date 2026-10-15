@@ -124,6 +124,7 @@ export function Editor() {
           : kind === 'video' && video
             ? video.video
             : null;
+    generator?.setActive(kind === 'generator');
     renderer.setVideo(source);
   }, [renderer]);
 

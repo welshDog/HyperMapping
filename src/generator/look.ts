@@ -63,9 +63,14 @@ export function isValidLook(x: unknown): x is Look {
 const LETTER: Record<LookStyle, string> = { plasma: 'P', kaleidoscope: 'K', neon: 'N', particles: 'S' };
 const FROM_LETTER: Record<string, LookStyle> = { P: 'plasma', K: 'kaleidoscope', N: 'neon', S: 'particles' };
 
+/**
+ * Weighted check digit: sum of nibble[i] * w[i] over the 8 seed digits, mod 16, with odd weights
+ * 1,3,5,...,15. Odd weights are invertible mod 16, so every single-digit change is caught, and an
+ * adjacent swap is caught unless the two digits differ by exactly 8.
+ */
 function checkDigit(hex8: string): string {
   let sum = 0;
-  for (const ch of hex8) sum += parseInt(ch, 16);
+  for (let i = 0; i < 8; i++) sum += parseInt(hex8[i], 16) * (2 * i + 1);
   return (sum % 16).toString(16).toUpperCase();
 }
 
