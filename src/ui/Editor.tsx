@@ -21,6 +21,7 @@ import { CalibratePanel } from './CalibratePanel';
 import { GeneratorPanel } from './GeneratorPanel';
 import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
+import { useAudioReactor } from './useAudioReactor';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
 
@@ -139,6 +140,10 @@ export function Editor() {
     },
     [applySource],
   );
+
+  // The microphone engine. Called BEFORE the channel effect so its unmount cleanup (final zero message)
+  // runs while the channel is still open.
+  const audio = useAudioReactor({ channelRef, genStateRef, updateGenerator });
 
   // The generator source lives as long as the renderer; it only draws while the generator is on.
   useEffect(() => {
@@ -531,6 +536,7 @@ export function Editor() {
           available={genAvailable}
           patternForce={patternForce}
           onChange={updateGenerator}
+          audio={audio}
           onClose={() => setVisualsOpen(false)}
         />
       )}

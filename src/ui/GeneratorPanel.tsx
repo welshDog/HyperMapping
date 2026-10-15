@@ -2,7 +2,42 @@ import { useRef, useState } from 'react';
 import { LOOK_STYLES, lookToCode, type StylePick } from '../generator/look';
 import { SPEED_MAX, SPEED_MIN, setSpeed } from '../generator/speed';
 import { SHUFFLE_CHOICES, type GeneratorState } from '../generator/shuffle';
+import type { AudioSettings } from '../audio/settings';
+import type { AudioStatus, MeterLevels } from './useAudioReactor';
 import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generator-actions';
+
+/** What the Sound section needs from useAudioReactor. */
+export interface SoundProps {
+  status: AudioStatus;
+  levels: MeterLevels;
+  settings: AudioSettings;
+  setSettings: (next: AudioSettings) => void;
+  start: () => Promise<void>;
+  stop: () => void;
+  /** False when this browser has no microphone listening at all (createAudioListener() === null). */
+  supported: boolean;
+}
+
+const STATUS_TEXT: Record<AudioStatus, string> = {
+  off: 'Off',
+  listening: 'Listening',
+  denied: "Microphone blocked: allow it in the browser's site settings",
+  'no-mic': 'No microphone found',
+  unsupported: 'Could not start the microphone (it may be in use by another app, or not supported here)',
+};
+
+const REACTIONS: { key: 'bass' | 'treble' | 'volume' | 'beatLook'; label: string }[] = [
+  { key: 'bass', label: 'Bass punch' },
+  { key: 'treble', label: 'Treble sparkle' },
+  { key: 'volume', label: 'Volume speeds motion' },
+  { key: 'beatLook', label: 'Big beat starts a new look' },
+];
+
+const METERS: { key: keyof MeterLevels; label: string }[] = [
+  { key: 'bass', label: 'Bass' },
+  { key: 'treble', label: 'Treble' },
+  { key: 'volume', label: 'Volume' },
+];
 
 interface Props {
   state: GeneratorState;
@@ -11,6 +46,7 @@ interface Props {
   /** The Editor's Test pattern button: while on, it hides the visuals. */
   patternForce: boolean;
   onChange: (next: GeneratorState) => void;
+  audio: SoundProps;
   onClose: () => void;
 }
 
@@ -35,7 +71,7 @@ interface Status {
 }
 
 /** The Visuals panel: switch the random-visuals generator on, pick a look, shuffle, copy or enter a code. */
-export function GeneratorPanel({ state, available, patternForce, onChange, onClose }: Props) {
+export function GeneratorPanel({ state, available, patternForce, onChange, audio, onClose }: Props) {
   const [codeText, setCodeText] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const codeBoxRef = useRef<HTMLInputElement>(null);
@@ -43,6 +79,12 @@ export function GeneratorPanel({ state, available, patternForce, onChange, onClo
 
   /** One bg-* class per state: pressed, normal and disabled replace each other. */
   const cls = (pressed: boolean) => `${BASE} ${!available ? DISABLED : pressed ? ON : OFF}`;
+
+  const listening = audio.status === 'listening';
+  const soundOk = audio.supported;
+  /** One bg-* class per state: unsupported, listening (Stop) and idle (Listen) replace each other. */
+  const listenCls = `${BASE} min-w-[7.5rem] ${!soundOk ? DISABLED : listening ? ON : OFF}`;
+  const pct = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 100);
 
   const copy = async () => {
     try {
@@ -210,6 +252,78 @@ export function GeneratorPanel({ state, available, patternForce, onChange, onClo
         </div>
 
         {status && <p className={`text-xs ${status.error ? 'text-amber-400' : 'text-emerald-400'}`}>{status.text}</p>}
+
+        <div className="mt-2 flex flex-col gap-3 border-t border-zinc-700 pt-3">
+          <h3 className="text-sm font-semibold">Sound</h3>
+          {!soundOk && <p className="text-xs text-amber-400">Not supported in this browser</p>}
+          <div className="flex items-center gap-3">
+            <button
+              aria-pressed={listening}
+              disabled={!soundOk}
+              className={listenCls}
+              onClick={() => (listening ? audio.stop() : void audio.start())}
+            >
+              {listening ? 'Stop' : 'Listen'}
+            </button>
+            <span role="status" className="text-xs text-zinc-400">
+              {soundOk ? STATUS_TEXT[audio.status] : 'Not supported in this browser'}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {METERS.map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-2 text-xs text-zinc-400">
+                <span className="w-14">{label}</span>
+                <div
+                  role="meter"
+                  aria-label={label}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={pct(audio.levels[key])}
+                  className="h-2 flex-1 overflow-hidden rounded bg-zinc-800"
+                >
+                  <div className="h-full bg-cyan-500" style={{ width: `${pct(audio.levels[key])}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sound-sensitivity" className="flex justify-between text-xs text-zinc-400">
+              <span>Sensitivity</span>
+              <span>{audio.settings.sensitivity.toFixed(1)}</span>
+            </label>
+            <input
+              id="sound-sensitivity"
+              type="range"
+              min={0.2}
+              max={3}
+              step={0.1}
+              value={audio.settings.sensitivity}
+              disabled={!soundOk}
+              className="w-full accent-cyan-500 disabled:opacity-40"
+              onChange={(e) => {
+                const v = e.currentTarget.valueAsNumber;
+                if (Number.isFinite(v)) audio.setSettings({ ...audio.settings, sensitivity: v });
+              }}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {REACTIONS.map(({ key, label }) => (
+              <label key={key} className={`flex items-center gap-2 text-sm ${soundOk ? '' : 'opacity-40'}`}>
+                <input
+                  type="checkbox"
+                  checked={audio.settings[key]}
+                  disabled={!soundOk}
+                  className="h-5 w-5 accent-cyan-500"
+                  onChange={(e) => audio.setSettings({ ...audio.settings, [key]: e.currentTarget.checked })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
 
         <button className="mt-2 self-center rounded-lg bg-cyan-500 px-6 py-3 font-medium text-black" onClick={onClose}>
           Done

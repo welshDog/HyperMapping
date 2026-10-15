@@ -90,6 +90,8 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         generatorState = msg.state;
         generator?.setState(generatorState);
         apply();
+      } else if (msg.type === 'audio') {
+        generatorRef.current?.setAudio({ bass: msg.bass, treble: msg.treble, vol: msg.vol });
       } else if (msg.type === 'video') {
         const mine = ++latest;
         try {

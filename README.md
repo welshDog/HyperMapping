@@ -69,9 +69,20 @@ No video handy? The **Visuals** button in the toolbar opens a panel that fills y
 - **Auto-shuffle** (Off, 15 s, 30 s, 60 s) picks a new look by itself while the visuals are on. It runs in the Editor tab, so a minimised or background Editor tab can drift or slow the shuffle (browsers throttle hidden tabs): keep the Editor window visible.
 - **Codes:** every look has a short code such as `K-7F3A92C1B`. **Copy** it, and type one into **Use code** to bring the same look back. The same code gives the same look and palette on another device, with slightly less fine detail on phones and tablets (they use a cheaper shader).
 - **Priority:** the Test pattern button always wins; otherwise visuals that are On replace a loaded video; with visuals Off a loaded video shows, and with neither you see the test pattern.
-- The Output window shows the same look in step with the editor. There is no audio reaction yet.
+- The Output window shows the same look in step with the editor.
 - A minimised Output window pauses its drawing (the browser stops it); restore it and it carries on.
 - If the browser cannot do this, the button is greyed out and everything else works as before.
+
+### Sound reaction
+
+The visuals can react to music. In the Visuals panel, under **Sound**, press **Listen** and allow the microphone.
+
+- **Bass punch** makes the picture pulse on low sounds, **Treble sparkle** adds shimmer on high sounds, **Volume speeds motion** makes the movement faster when it is loud, and **Big beat starts a new look** picks a new look on a strong beat (never more often than every 6 seconds, and only while the visuals are on).
+- **Sensitivity** (0.2 to 3) sets how strongly it reacts. If the bars jump around in a silent room, lower Sensitivity. The three bars show what the microphone is hearing.
+- Keep the Editor window visible: browsers slow down hidden tabs, which makes the reaction stutter.
+- The microphone stays in the browser. Only three numbers (bass, treble, volume) are sent to the other windows; no sound is recorded or sent anywhere. Listening is never remembered: after a reload press Listen again. Your Sensitivity and tick boxes are remembered.
+- Each window reacts to its own copy of the numbers, so the Editor, Output and simulator pictures are close but not pixel-identical while music drives the speed.
+- If the microphone is blocked, missing or busy, the panel says so and everything else keeps working.
 
 ## Saving your setup
 
