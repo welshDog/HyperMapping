@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         simulator: fileURLToPath(new URL('./simulator.html', import.meta.url)),
+        camera: fileURLToPath(new URL('./camera.html', import.meta.url)),
       },
     },
   },
