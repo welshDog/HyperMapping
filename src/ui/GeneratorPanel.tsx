@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { LOOK_STYLES, lookToCode, type StylePick } from '../generator/look';
+import { SPEED_MAX, SPEED_MIN, setSpeed } from '../generator/speed';
 import { SHUFFLE_CHOICES, type GeneratorState } from '../generator/shuffle';
 import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generator-actions';
 
@@ -123,6 +124,28 @@ export function GeneratorPanel({ state, available, patternForce, onChange, onClo
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="visuals-speed" className="flex justify-between text-xs text-zinc-400">
+            <span>Speed</span>
+            <span>{state.speed.toFixed(2)}x</span>
+          </label>
+          <input
+            id="visuals-speed"
+            type="range"
+            aria-label="Speed"
+            min={SPEED_MIN}
+            max={SPEED_MAX}
+            step={0.05}
+            value={state.speed}
+            disabled={!available}
+            className="w-full accent-cyan-500 disabled:opacity-40"
+            onChange={(e) => {
+              const v = e.currentTarget.valueAsNumber;
+              if (Number.isFinite(v)) onChange(setSpeed(state, v, Date.now()));
+            }}
+          />
         </div>
 
         <div className="flex flex-col gap-1">

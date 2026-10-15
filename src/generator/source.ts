@@ -11,6 +11,7 @@ import {
   type UniformName,
 } from './shaders';
 import { currentLook, type GeneratorState } from './shuffle';
+import { shaderTime } from './speed';
 
 export const GENERATOR_WIDTH = 960;
 export const GENERATOR_HEIGHT = 540;
@@ -187,7 +188,7 @@ export function createGeneratorSource(): GeneratorSource | null {
       g.useProgram(p.program);
       g.bindVertexArray(p.vao);
       g.uniform2f(p.loc.u_res, GENERATOR_WIDTH, GENERATOR_HEIGHT);
-      g.uniform1f(p.loc.u_time, Math.max(0, now - s.startedAt) / 1000);
+      g.uniform1f(p.loc.u_time, shaderTime(s, now));
       g.uniform1f(p.loc.u_fade, prev ? fade : 1);
       g.uniform1f(p.loc.u_pulse, 0);
       g.uniform1i(p.loc.u_octaves, octaves);

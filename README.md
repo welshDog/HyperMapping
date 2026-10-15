@@ -64,7 +64,8 @@ Let a phone camera find the pins for you.
 No video handy? The **Visuals** button in the toolbar opens a panel that fills your faces with moving, generated pictures (Plasma, Kaleidoscope, Neon, Particles).
 
 - **On / Off** switches the visuals. They always start Off after a reload; your last look and shuffle choice are remembered.
-- **Look:** Auto mixes all four; pick one to lock to that style (the picture changes straight away). **Randomize** gives you a new look (and turns the visuals on), with a short cross-fade. Speed comes from the look; there is no separate speed control.
+- **Look:** Auto mixes all four; pick one to lock to that style (the picture changes straight away). **Randomize** gives you a new look (and turns the visuals on), with a short cross-fade.
+- **Speed:** a slider under the Look picker, 0.25x to 2x; moving it never makes the picture jump.
 - **Auto-shuffle** (Off, 15 s, 30 s, 60 s) picks a new look by itself while the visuals are on. It runs in the Editor tab, so a minimised or background Editor tab can drift or slow the shuffle (browsers throttle hidden tabs): keep the Editor window visible.
 - **Codes:** every look has a short code such as `K-7F3A92C1B`. **Copy** it, and type one into **Use code** to bring the same look back. The same code gives the same look and palette on another device, with slightly less fine detail on phones and tablets (they use a cheaper shader).
 - **Priority:** the Test pattern button always wins; otherwise visuals that are On replace a loaded video; with visuals Off a loaded video shows, and with neither you see the test pattern.
