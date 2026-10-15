@@ -18,6 +18,7 @@ import { PinOverlay } from './PinOverlay';
 import { SliceEditor } from './SliceEditor';
 import { sliceAspect } from './slice-aspect';
 import { CalibratePanel } from './CalibratePanel';
+import { GeneratorPanel } from './GeneratorPanel';
 import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
 import { useRenderer } from './useRenderer';
@@ -50,11 +51,12 @@ export function Editor() {
   // The generator is always Off after a reload; only the look, shuffle and style choice are remembered.
   const [genState, setGenState] = useState<GeneratorState>(() => loadGeneratorState(store, Date.now(), Math.random));
   const genStateRef = useRef<GeneratorState>(genState); // read by the channel effect, the shuffle timer and applySource
-  const adoptLayoutRef =useRef<(list: Surface[]) => void>(() => {});
+  const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [setupsOpen, setSetupsOpen] = useState(false);
   const [calibrateOpen, setCalibrateOpen] = useState(false);
+  const [visualsOpen, setVisualsOpen] = useState(false);
   const dragBaseRef = useRef<Surface[] | null>(null);
   const [glue, setGlue] = useState(true); // pins on the same spot move together and snap; not saved
   const [notice, setNotice] = useState<string | null>(null);
@@ -463,6 +465,15 @@ export function Editor() {
           >
             Test pattern: {patternForce ? 'on' : 'off'}
           </button>
+          <button
+            aria-pressed={genState.on}
+            disabled={!genAvailable}
+            title={genAvailable ? undefined : 'Visuals are not supported in this browser'}
+            className={`rounded-lg px-4 py-3 font-medium min-w-[8.5rem] disabled:opacity-40 ${genState.on ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
+            onClick={() => setVisualsOpen(true)}
+          >
+            Visuals: {genState.on ? 'on' : 'off'}
+          </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
           </button>
@@ -510,6 +521,15 @@ export function Editor() {
           onLoad={(list) => adoptLayoutRef.current(list)}
           onStartFresh={startFresh}
           onClose={() => setSetupsOpen(false)}
+        />
+      )}
+
+      {mode === 'edit' && visualsOpen && (
+        <GeneratorPanel
+          state={genState}
+          available={genAvailable}
+          onChange={updateGenerator}
+          onClose={() => setVisualsOpen(false)}
         />
       )}
 

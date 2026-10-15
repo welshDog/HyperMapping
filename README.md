@@ -59,6 +59,19 @@ Let a phone camera find the pins for you.
 - The pins are only right when the Output window fills the projector image (see the notes under Virtual projector).
 - Dim the room, aim so the projected picture covers the faces, and keep the phone steady. A tap on an unlit part of a face is refused with a message.
 
+## Random visuals
+
+No video handy? The **Visuals** button in the toolbar opens a panel that fills your faces with moving, generated pictures (Plasma, Kaleidoscope, Neon, Particles).
+
+- **On / Off** switches the visuals. They always start Off after a reload; your last look and shuffle choice are remembered.
+- **Look** picks one style, or **Auto** for a mix. **Randomize** gives you a new look (and turns the visuals on), with a short cross-fade.
+- **Auto-shuffle** (Off, 15 s, 30 s, 60 s) picks a new look by itself while the visuals are on.
+- **Codes:** every look has a short code such as `K-7F3A92C1B`. **Copy** it, and type one into **Use code** to bring the same look back, on any device.
+- **Priority:** the Test pattern button always wins; otherwise visuals that are On replace a loaded video; with visuals Off a loaded video shows, and with neither you see the test pattern.
+- The Output window shows the same look in step with the editor. There is no audio reaction yet.
+- A minimised Output window pauses its drawing (the browser stops it); restore it and it carries on.
+- If the browser cannot do this, the button is greyed out and everything else works as before.
+
 ## Saving your setup
 
 - **Setups** (in the toolbar) opens the setups panel. Type a name and press **Save**: the layout of all your faces (pins and slices) is stored in this browser. **Load** brings one back, **Delete** removes one (tap twice). Saving under an existing name replaces it. You can keep up to 30.
