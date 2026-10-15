@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FRAGMENT_SRC, GLOBAL_UNIFORMS, LOOK_UNIFORMS, lookUniforms, seedToUniform, VERTEX_SRC } from './shaders';
 import { LOOK_STYLES, paletteFor, speedFor } from './look';
+import SOURCE_TS from './source.ts?raw';
 
 describe('seedToUniform', () => {
   it('is deterministic and fits exactly in a float32 (24 bits)', () => {
@@ -74,11 +75,45 @@ describe('shader sources', () => {
     expect(FRAGMENT_SRC.split('u_pulse').length - 1).toBeGreaterThan(1);
   });
 
-  it('reads time only through u_time (no other clock or randomness)', () => {
+  it('reads time only through u_time and u_atime (no other clock or randomness)', () => {
     for (const src of [VERTEX_SRC, FRAGMENT_SRC]) {
-      const rest = src.replace(/\bu_time\b/g, '');
+      const rest = src.replace(/\bu_a?time\b/g, '');
       expect(rest).not.toMatch(/time|clock|date|random|gl_FragCoord/i);
     }
+  });
+
+  it('has the audio uniforms u_treble and u_atime as globals', () => {
+    expect(GLOBAL_UNIFORMS).toContain('u_pulse');
+    expect(GLOBAL_UNIFORMS).toContain('u_treble');
+    expect(GLOBAL_UNIFORMS).toContain('u_atime');
+    expect(FRAGMENT_SRC).toMatch(/uniform float u_treble;/);
+    expect(FRAGMENT_SRC).toMatch(/uniform float u_atime;/);
+  });
+
+  it('adds loudness time to the clock in the time expression', () => {
+    expect(FRAGMENT_SRC).toMatch(/float t = \(u_time \+ u_atime\) \* speed;/);
+    expect(FRAGMENT_SRC).not.toMatch(/float t = u_time \* speed;/);
+  });
+
+  it('reacts to treble in every look', () => {
+    const bodies = ['lookPlasma', 'lookKaleido', 'lookNeon', 'lookParticles'].map((name) => {
+      const start = FRAGMENT_SRC.indexOf(`vec3 ${name}(`);
+      expect(start).toBeGreaterThan(-1);
+      const end = FRAGMENT_SRC.indexOf('\n}\n', start);
+      return FRAGMENT_SRC.slice(start, end);
+    });
+    for (const body of bodies) {
+      expect(body).toMatch(/\bu_treble\b/);
+      expect(body).toMatch(/\bu_pulse\b/);
+    }
+    expect(FRAGMENT_SRC.split('u_treble').length - 1).toBeGreaterThanOrEqual(5); // declaration + 4 looks
+  });
+
+  it('source.ts looks up and sets every global uniform each frame', () => {
+    const src = SOURCE_TS;
+    expect(src).toMatch(/\[\.\.\.GLOBAL_UNIFORMS, \.\.\.LOOK_UNIFORMS\]/);
+    for (const name of GLOBAL_UNIFORMS) expect(src).toMatch(new RegExp(`p\\.loc\\.${name}\\b`));
+    expect(src).not.toMatch(/u_pulse, 0\)/); // the pulse is no longer hard-wired to zero
   });
 
   it('caps fbm by u_octaves', () => {

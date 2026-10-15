@@ -1,3 +1,4 @@
+import { fadeLevels, stepAudioTime } from '../audio/motion';
 import { createStreamVideo, type StreamVideo } from '../sources/stream-video';
 import {
   CHEAP_OCTAVES,
@@ -29,6 +30,11 @@ export interface GeneratorSource {
   readonly cheap: boolean;
   /** Store the state to draw from the next frame on (no GL work here). */
   setState(state: GeneratorState): void;
+  /**
+   * Latest sound levels (0..1 each, already masked by the Editor's settings). Stamped on arrival;
+   * levels older than 100 ms fade out by 400 ms, so a silent or closed sender cannot freeze a pulse.
+   */
+  setAudio(levels: { bass: number; treble: number; vol: number }): void;
   /** Only draw while the generator is on AND active (default true): false when another source is showing. */
   setActive(active: boolean): void;
   /** Restart the stream if the browser paused it (backgrounded tab). */
@@ -165,6 +171,12 @@ export function createGeneratorSource(): GeneratorSource | null {
     let failures = 0;
     let lastWarnAt = -Infinity;
     let broken = false; // too many consecutive draw failures: stop for good
+    // Sound: the latest levels and when they arrived (performance.now ms); nothing heard yet = zeros.
+    let audio = { bass: 0, treble: 0, vol: 0 };
+    let audioAt = -Infinity;
+    // Loudness time: advanced only by drawn frames, so it never accumulates while off/inactive.
+    let motion = { smooth: 0, atime: 0 };
+    let lastFrameAt: number | null = null; // null = the next frame starts a new run (dt 0)
 
     const setLooks = (g: WebGL2RenderingContext, p: GlProgram, cur: LookUniforms, prev: LookUniforms) => {
       g.uniform1iv(p.loc.u_style, [cur.style, prev.style]);
@@ -176,10 +188,14 @@ export function createGeneratorSource(): GeneratorSource | null {
       g.uniform3fv(p.loc.u_pd, [...cur.d, ...prev.d]);
     };
 
-    const draw = (s: GeneratorState) => {
+    const draw = (s: GeneratorState, frameAt: number) => {
       const g = gl;
       const p = prog;
       if (!g || !p || lost || g.isContextLost()) return;
+      const lv = fadeLevels(audio, frameAt - audioAt);
+      const dt = lastFrameAt === null ? 0 : (frameAt - lastFrameAt) / 1000; // stepAudioTime clamps it
+      lastFrameAt = frameAt;
+      motion = stepAudioTime(motion, lv.vol, dt);
       const now = Date.now();
       const { prev, cur, fade } = currentLook(s, now);
       const curU = lookUniforms(cur);
@@ -190,7 +206,9 @@ export function createGeneratorSource(): GeneratorSource | null {
       g.uniform2f(p.loc.u_res, GENERATOR_WIDTH, GENERATOR_HEIGHT);
       g.uniform1f(p.loc.u_time, shaderTime(s, now));
       g.uniform1f(p.loc.u_fade, prev ? fade : 1);
-      g.uniform1f(p.loc.u_pulse, 0);
+      g.uniform1f(p.loc.u_pulse, lv.bass);
+      g.uniform1f(p.loc.u_treble, lv.treble);
+      g.uniform1f(p.loc.u_atime, motion.atime);
       g.uniform1i(p.loc.u_octaves, octaves);
       setLooks(g, p, curU, prevU);
       g.drawArrays(g.TRIANGLES, 0, 3);
@@ -205,7 +223,8 @@ export function createGeneratorSource(): GeneratorSource | null {
       if (!s || disposed || broken || lost || !gl || gl.isContextLost()) return;
       try {
         lastDrawAt = performance.now();
-        draw(s);
+        lastFrameAt = null; // off/inactive -> drawing: a new run, the idle gap adds no loudness time
+        draw(s, lastDrawAt);
       } catch (err) {
         console.warn('[generator] first frame failed:', err);
       }
@@ -224,12 +243,15 @@ export function createGeneratorSource(): GeneratorSource | null {
       raf = null;
       timer = null;
       const s = state;
-      if (!wantsFrames() || !s) return; // idle until setState turns it on again
+      if (!wantsFrames() || !s) {
+        lastFrameAt = null; // the next run's first frame must not count the idle gap
+        return; // idle until setState turns it on again
+      }
       const t = performance.now();
       if (t - lastDrawAt >= MIN_DRAW_GAP_MS) {
         lastDrawAt = t;
         try {
-          draw(s);
+          draw(s, t);
           failures = 0;
         } catch (err) {
           failures += 1;
@@ -275,12 +297,20 @@ export function createGeneratorSource(): GeneratorSource | null {
         if (!was && wantsFrames()) drawNow(); // off -> on: no black first frame
         schedule();
       },
+      setAudio: (levels) => {
+        const clean = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
+        audio = { bass: clean(levels.bass), treble: clean(levels.treble), vol: clean(levels.vol) };
+        audioAt = performance.now();
+      },
       setActive: (next) => {
         const was = wantsFrames();
         active = next;
         if (!was && wantsFrames()) drawNow();
         if (wantsFrames()) schedule();
-        else stopLoop();
+        else {
+          stopLoop();
+          lastFrameAt = null;
+        }
       },
       ensurePlaying: () => {
         if (!disposed) ensurePlaying();

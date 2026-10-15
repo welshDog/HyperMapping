@@ -24,7 +24,9 @@ out vec4 outColor;
 uniform vec2 u_res;
 uniform float u_time;
 uniform float u_fade;
-uniform float u_pulse;
+uniform float u_pulse;  // bass level 0..1 (faded when stale)
+uniform float u_treble; // treble level 0..1
+uniform float u_atime;  // extra shader seconds earned by loudness (never goes backwards)
 uniform int u_octaves; // 5 normally, 3 in cheap mode (phones)
 uniform int u_style[2];
 uniform float u_seed[2];
@@ -93,6 +95,7 @@ mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 vec3 lookPlasma(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3 d) {
   vec2 off = vec2(hash1u(s), hash1u(s + 7u)) * 50.0;
   float warp = 2.0 + 2.5 * hash1u(s + 13u);   // calm marble .. wild swirl
+  warp *= 1.0 + 0.5 * u_pulse;                 // bass: the swirl surges
   float span = 0.6 + 0.9 * hash1u(s + 17u);   // how many palette hues show at once
   p = p * (1.1 + 1.0 * hash1u(s + 3u)) / pulse + off;
   float tt = t * 0.12;
@@ -109,8 +112,15 @@ vec3 lookPlasma(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, ve
   float shade = smoothstep(0.15, 0.85, f);
   col *= 0.5 + 1.0 * shade;
   float ridge = pow(1.0 - abs(2.0 * fract(f * 3.0 + 0.2 * tt) - 1.0), 6.0);
-  col += 0.35 * ridge * pal(idx + 0.5, a, b, c, d);
-  return col * pulse;
+  col += 0.35 * ridge * pal(idx + 0.5, a, b, c, d) * (1.0 + 1.2 * u_pulse); // bass: ridges flash
+  // treble: crisper light/dark plus hairline contour shimmer (a high-octave term on the field)
+  if (u_treble > 0.0) {
+    float fine = gnoise(p * 16.0 + vec2(0.0, tt * 8.0), s + 59u);
+    float hair = pow(1.0 - abs(2.0 * fract(f * 9.0 + 0.6 * fine) - 1.0), 12.0);
+    col *= 1.0 + u_treble * 0.6 * (shade - 0.5);
+    col += u_treble * 0.9 * hair * pal(idx + 0.5, a, b, c, d);
+  }
+  return col * pulse * (1.0 + 0.12 * u_pulse);
 }
 
 // ---------- kaleidoscope: polar fold ----------
@@ -118,7 +128,7 @@ vec3 lookKaleido(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, v
   float n = 5.0 + floor(hash1u(s + 101u) * 8.0); // 5..12
   float dir = hash1u(s + 103u) < 0.5 ? -1.0 : 1.0;
   p = rot(dir * t * 0.08) * p;
-  float rad = length(p) / pulse;
+  float rad = length(p) / pulse / (1.0 + 0.2 * u_pulse); // bass: breathing zoom
   float ang = atan(p.y, p.x);
   float seg = TAU / n;
   ang = mod(ang, seg);
@@ -133,8 +143,14 @@ vec3 lookKaleido(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, v
   float rings = 0.5 + 0.5 * cos(rad * ringFreq - t * 1.2 + f * 7.0);
   float lines = smoothstep(0.92, 1.0, rings);
   vec3 col = pal(g * 1.3 + rad * 0.5 - t * 0.05, a, b, c, d);
-  col *= 0.25 + 1.0 * smoothstep(0.25, 0.8, g) + 0.35 * pow(rings, 3.0);
-  col += lines * pal(g + 0.5, a, b, c, d) * 0.9;
+  col *= 0.25 + 1.0 * smoothstep(0.25, 0.8, g) + 0.35 * pow(rings, 3.0) * (1.0 + 2.5 * u_pulse); // bass: rings pulse
+  col += lines * pal(g + 0.5, a, b, c, d) * 0.9 * (1.0 + 1.2 * u_pulse);
+  // treble: bright glints on the petals (thresholded high-frequency noise in the folded space)
+  if (u_treble > 0.0) {
+    float gn = gnoise(kk * 5.0 + vec2(t * 1.5, -t * 0.7), s + 71u);
+    float glint = smoothstep(0.28, 0.5, gn) * smoothstep(0.03, 0.12, rad);
+    col += u_treble * 2.2 * glint * mix(pal(g + 0.25, a, b, c, d), vec3(1.0), 0.5);
+  }
   // bright jewel at the fold seams
   float seam = exp(-ang * rad * 60.0) * smoothstep(0.02, 0.2, rad);
   col += seam * 0.4 * pal(rad - t * 0.1 + 0.25, a, b, c, d);
@@ -156,14 +172,14 @@ vec3 lookNeon(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3
     float seg = TAU / sides;
     rp = r * cos(mod(ang + 0.5 * seg, seg) - 0.5 * seg) / cos(0.5 * seg);
   }
-  rp /= pulse;
+  rp /= pulse * (1.0 + 0.3 * u_pulse); // bass: the rings expand
   float depth = 0.35 / max(rp, 1e-3);
   float z = depth + t * 0.9;
   float ringId = floor(z);
   // distance to the nearest ring in screen units (d depth / d rp = 0.35 / rp^2)
   float sd = abs(fract(z) - 0.5) * rp * rp / 0.35;
-  float wdt = 0.0025 + 0.006 * rp;
-  float glow = exp(-sd / wdt * 1.2) * 1.6 + wdt * 0.9 / (sd + wdt) * 0.55;
+  float wdt = (0.0025 + 0.006 * rp) * (1.0 + 1.2 * u_pulse); // bass: the glow swells
+  float glow = exp(-sd / wdt * 1.2) * 1.6 * (1.0 + 0.9 * u_treble) + wdt * 0.9 / (sd + wdt) * 0.55 * (1.0 + 0.8 * u_pulse);
   float fog = smoothstep(0.015, 0.25, rp);
   vec3 ringCol = pal(hash1u(uint(int(ringId)) ^ s) * 0.6 + t * 0.03, a, b, c, d);
   vec3 col = ringCol * glow * fog * (0.6 + 1.2 * rp);
@@ -171,7 +187,7 @@ vec3 lookNeon(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3
   if (!circle) {
     float seg = TAU / sides;
     float sp = abs(mod(ang + 0.5 * seg, seg) - 0.5 * seg) * r;
-    col += pal(0.7 + t * 0.02, a, b, c, d) * exp(-sp * 260.0) * 0.5 * fog;
+    col += pal(0.7 + t * 0.02, a, b, c, d) * exp(-sp * 260.0) * 0.5 * fog * (1.0 + 2.0 * u_treble); // treble: brighter edges
   }
   // perspective grid floor
   // g and fwidth(g) are computed for every pixel (derivatives need uniform control flow);
@@ -185,7 +201,9 @@ vec3 lookNeon(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3
     vec2 gd = abs(fract(g) - 0.5);
     float line = max(smoothstep(0.5 - w.x * 1.5, 0.5, gd.x), smoothstep(0.5 - w.y * 1.5, 0.5, gd.y));
     float gfog = exp(-gz * 0.18) * smoothstep(0.0, 0.05, h);
-    col += pal(0.15 + gz * 0.03, a, b, c, d) * line * gfog * 1.3;
+    // treble: grid lines flicker, each row on its own beat-free shimmer
+    float flick = hash1u(uint(int(floor(g.y))) * 747796405u ^ uint(int(floor(t * 24.0))) ^ s);
+    col += pal(0.15 + gz * 0.03, a, b, c, d) * line * gfog * 1.3 * (1.0 + u_treble * (0.4 + 2.2 * flick));
   }
   // horizon haze
   col += pal(0.4, a, b, c, d) * exp(-abs(p.y - horizon) * 18.0) * 0.35;
@@ -221,7 +239,7 @@ vec3 lookParticles(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c,
       vec2 pos = 0.25 + 0.5 * h;
       if (mode == 0) pos += 0.12 * vec2(sin(t * 0.9 + ph), cos(t * 0.7 + ph * 1.3));
       vec2 dv = f - pos;
-      float size = (0.06 + 0.05 * near) * pulse;
+      float size = (0.06 + 0.05 * near) * pulse * (1.0 + 0.3 * u_pulse); // bass: bigger dots
       float br;
       if (mode == 2) {
         dv.y *= 0.12;
@@ -230,15 +248,28 @@ vec3 lookParticles(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c,
       } else if (mode == 1) {
         float d2 = length(dv);
         br = exp(-d2 * d2 / (size * size * 0.12));
-        br += 0.6 * exp(-abs(dv.x) * 60.0) * exp(-abs(dv.y) * 8.0) * near; // star cross
-        br += 0.6 * exp(-abs(dv.y) * 60.0) * exp(-abs(dv.x) * 8.0) * near;
+        float fl8 = 8.0 / (1.0 + 1.0 * u_treble); // treble: longer cross flares
+        br += 0.6 * exp(-abs(dv.x) * 60.0) * exp(-abs(dv.y) * fl8) * near * (1.0 + u_treble); // star cross
+        br += 0.6 * exp(-abs(dv.y) * 60.0) * exp(-abs(dv.x) * fl8) * near * (1.0 + u_treble);
       } else {
         float d2 = length(dv);
         br = exp(-d2 * d2 / (size * size)) * 0.9 + 0.12 / (1.0 + d2 * d2 * 300.0);
       }
       float tw = 0.55 + 0.45 * sin(t * (1.5 + 3.0 * h.x) + ph);
+      if (u_treble > 0.0) {
+        // treble: fast, deep twinkle and a cross flare on every particle
+        float fast = 0.5 + 0.5 * sin(t * (11.0 + 9.0 * h.y) + ph * 3.0);
+        tw *= 1.0 + u_treble * (1.6 * fast * fast - 0.45);
+        if (mode != 1) br += u_treble * 0.55 * near * (exp(-abs(dv.x) * 50.0) * exp(-abs(dv.y) * 6.0) + exp(-abs(dv.y) * 50.0) * exp(-abs(dv.x) * 6.0));
+      }
+      // grown dots and flares must not show their cell's square edge: fade to 0 at the border
+      float react = max(u_pulse, u_treble);
+      if (react > 0.0) {
+        float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+        br *= 1.0 - react * (1.0 - smoothstep(0.0, 0.2, edge));
+      }
       vec3 pc = pal(hash2i(cell, ls + 3u) * 0.5 + fl * 0.15 + t * 0.02, a, b, c, d);
-      col += pc * br * tw * (0.6 + 0.9 * near) * 1.8;
+      col += pc * br * tw * (0.6 + 0.9 * near) * 1.8 * (1.0 + 0.9 * u_pulse); // bass: brighter
     }
   }
   return col;
@@ -246,7 +277,7 @@ vec3 lookParticles(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c,
 
 vec3 renderLook(int style, float seedF, float speed, vec3 a, vec3 b, vec3 c, vec3 d, vec2 p) {
   uint s = uint(seedF);
-  float t = u_time * speed;
+  float t = (u_time + u_atime) * speed;
   float pulse = 1.0 + 0.15 * u_pulse;
   if (style == 0) return lookPlasma(p, t, s, pulse, a, b, c, d);
   if (style == 1) return lookKaleido(p, t, s, pulse, a, b, c, d);
@@ -276,7 +307,7 @@ void main() {
 `;
 
 /** Uniforms set once per frame, shared by both looks. */
-export const GLOBAL_UNIFORMS = ['u_res', 'u_time', 'u_fade', 'u_pulse', 'u_octaves'] as const;
+export const GLOBAL_UNIFORMS = ['u_res', 'u_time', 'u_fade', 'u_pulse', 'u_treble', 'u_atime', 'u_octaves'] as const;
 /** Per-look uniform arrays: index 0 = current look, index 1 = previous look. */
 export const LOOK_UNIFORMS = ['u_style', 'u_seed', 'u_speed', 'u_pa', 'u_pb', 'u_pc', 'u_pd'] as const;
 export type UniformName = (typeof GLOBAL_UNIFORMS)[number] | (typeof LOOK_UNIFORMS)[number];
