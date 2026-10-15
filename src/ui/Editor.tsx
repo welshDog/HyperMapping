@@ -467,7 +467,7 @@ export function Editor() {
             Test pattern: {patternForce ? 'on' : 'off'}
           </button>
           <button
-            aria-pressed={genState.on}
+            aria-haspopup="dialog"
             disabled={!genAvailable}
             title={genAvailable ? undefined : 'Visuals are not supported in this browser'}
             className={`rounded-lg px-4 py-3 font-medium min-w-[8.5rem] disabled:opacity-40 ${genState.on ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
@@ -529,6 +529,7 @@ export function Editor() {
         <GeneratorPanel
           state={genState}
           available={genAvailable}
+          patternForce={patternForce}
           onChange={updateGenerator}
           onClose={() => setVisualsOpen(false)}
         />

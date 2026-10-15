@@ -1,5 +1,6 @@
 import { lookFromCode } from '../generator/look';
-import { randomizeState, type GeneratorState } from '../generator/shuffle';
+import type { StylePick } from '../generator/look';
+import { FADE_MS, randomizeState, type GeneratorState } from '../generator/shuffle';
 
 /**
  * Switch the generator on or off. Switching ON starts both clocks at `now`: a remembered state's
@@ -30,4 +31,24 @@ export function applyCode(state: GeneratorState, text: string, now: number): App
   if (!look) return { ok: false };
   const on = setOn(state, true, now);
   return { ok: true, state: { ...on, prev: state.look, look, changedAt: now } };
+}
+
+/**
+ * Pick a style. A fixed style that differs from the current look, with the generator on, cross-fades
+ * to a random look of that style at once; otherwise only `stylePick` changes (Auto, same style, off).
+ */
+export function pickStyle(state: GeneratorState, pick: StylePick, now: number, rng: () => number): GeneratorState {
+  const next = { ...state, stylePick: pick };
+  if (pick === 'auto' || !state.on || pick === state.look.style) return next;
+  return randomizeState(next, now, rng);
+}
+
+/**
+ * Change the auto-shuffle time. The shuffle clock restarts now (so it never fires at once), unless a
+ * cross-fade is in progress, which keeps its `prev` and `changedAt`.
+ */
+export function setShuffle(state: GeneratorState, sec: GeneratorState['shuffleSec'], now: number): GeneratorState {
+  if (sec === state.shuffleSec) return state;
+  const fading = state.prev !== null && now - state.changedAt < FADE_MS;
+  return fading ? { ...state, shuffleSec: sec } : { ...state, shuffleSec: sec, prev: null, changedAt: now };
 }

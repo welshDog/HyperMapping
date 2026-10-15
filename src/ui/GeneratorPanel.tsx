@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 import { LOOK_STYLES, lookToCode, type StylePick } from '../generator/look';
 import { SHUFFLE_CHOICES, type GeneratorState } from '../generator/shuffle';
-import { applyCode, randomizeOn, setOn } from './generator-actions';
+import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generator-actions';
 
 interface Props {
   state: GeneratorState;
   /** False when this browser cannot make the generator. */
   available: boolean;
+  /** The Editor's Test pattern button: while on, it hides the visuals. */
+  patternForce: boolean;
   onChange: (next: GeneratorState) => void;
   onClose: () => void;
 }
@@ -32,7 +34,7 @@ interface Status {
 }
 
 /** The Visuals panel: switch the random-visuals generator on, pick a look, shuffle, copy or enter a code. */
-export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
+export function GeneratorPanel({ state, available, patternForce, onChange, onClose }: Props) {
   const [codeText, setCodeText] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const codeBoxRef = useRef<HTMLInputElement>(null);
@@ -56,7 +58,7 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
     }
   };
 
-  const useCode = () => {
+  const applyTypedCode = () => {
     const result = applyCode(state, codeText, Date.now());
     if (!result.ok) {
       setStatus({ text: BAD_CODE, error: true });
@@ -79,6 +81,12 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
           <p className="text-xs text-amber-400">Visuals are not supported in this browser</p>
         )}
 
+        {available && state.on && patternForce && (
+          <p className="text-xs text-amber-400">
+            The test pattern is on, so the visuals are hidden. Turn Test pattern off to see them.
+          </p>
+        )}
+
         <div className="flex items-center gap-2">
           <button
             aria-pressed={state.on}
@@ -98,7 +106,10 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-400">Look (showing: {STYLE_LABEL[state.look.style]})</span>
+          <span className="text-xs text-zinc-400">
+            Look: Auto mixes all four; pick one to lock to that style (the picture changes straight away). Showing:{' '}
+            {STYLE_LABEL[state.look.style]}
+          </span>
           <div className="flex flex-wrap gap-2">
             {PICKS.map((p) => (
               <button
@@ -106,7 +117,7 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
                 aria-pressed={state.stylePick === p}
                 disabled={!available}
                 className={cls(state.stylePick === p)}
-                onClick={() => onChange({ ...state, stylePick: p })}
+                onClick={() => onChange(pickStyle(state, p, Date.now(), Math.random))}
               >
                 {STYLE_LABEL[p]}
               </button>
@@ -123,7 +134,7 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
                 aria-pressed={state.shuffleSec === s}
                 disabled={!available}
                 className={cls(state.shuffleSec === s)}
-                onClick={() => onChange({ ...state, shuffleSec: s })}
+                onClick={() => onChange(setShuffle(state, s, Date.now()))}
               >
                 {s === 0 ? 'Off' : `${s} s`}
               </button>
@@ -166,10 +177,10 @@ export function GeneratorPanel({ state, available, onChange, onClose }: Props) {
                 setStatus(null);
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') useCode();
+                if (e.key === 'Enter') applyTypedCode();
               }}
             />
-            <button disabled={!available} className={cls(false)} onClick={useCode}>
+            <button disabled={!available} className={cls(false)} onClick={applyTypedCode}>
               Use code
             </button>
           </div>
