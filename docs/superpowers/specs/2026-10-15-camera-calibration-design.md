@@ -15,7 +15,7 @@ Agreed with Lyndz:
 2. The phone opens the link (`/camera.html?s=<session>`), grants camera access and is pointed at the box. The panel shows "Phone connected".
 3. The user opens the Output window fullscreen on the projector and presses **Start scan**. The Output window shows the scan frames; the phone captures each one and reports back. About 40 frames, roughly 10–15 seconds. The phone must be held still.
 4. When the scan ends the phone shows its camera picture (the white frame). The user taps the 4 corners of face 1 in the order tl, tr, br, bl, then Next face, and so on for each face in the Editor.
-5. **Apply** replaces the faces' corners with the computed pins (undoable: the previous corners are kept until Apply is pressed again or the panel closes, and **Cancel** changes nothing). Slices are untouched.
+5. **Apply** replaces the corners of the faces that were tapped with the computed pins; it is final (use Setups to save the old layout first), and **Cancel** changes nothing. Slices and faces that were skipped are untouched.
 
 ## Linking the phone and laptop — a tiny relay
 The Editor and Output talk over the browser's `BroadcastChannel`, which only works inside one browser, so a phone needs another carrier. Serverless WebRTC would need a two-way code exchange between the devices (the phone cannot just scan a code and be connected), so instead the existing server (`vite dev` and `vite preview`, which the launcher already runs) gets a small plugin, `calibrationRelay`, that hosts a message mailbox. No new process, no extra RAM.
@@ -32,7 +32,7 @@ Phone → laptop: `hello { width, height }`, `ready` (camera running, phone stea
 ## Scan frames — pure module `src/calibrate/patterns.ts`
 - Projector grid: the Output window's CSS-pixel size at scan time is reported to the Editor and used as the projector size `(pw, ph)`; the scan runs in a coarse grid `gw = ceil(pw / STEP_PX)`, `gh = ceil(ph / STEP_PX)` with `STEP_PX = 4`.
 - `bitsFor(n): number` — number of Gray-code bits needed to address `n` cells (`ceil(log2 n)`, 1 for n ≤ 2).
-- `frameCount(gw, gh): number` — `2 + 2*bitsX + 2*bitsY` (white, black, then each bit pattern and its inverse, X then Y). With 4-pixel steps on 1920×1080 this is `2 + 2*9 + 2*8 = 36`.
+- `frameCount(gw, gh): number` — `2 + 2*bitsX + 2*bitsY` (white, black, then each bit pattern and its inverse, X then Y). With 4-pixel steps on 1920×1080 this is `2 + 2*9 + 2*9 = 38` (270 rows need 9 bits).
 - `grayCode(i: number): number`, `fromGray(g: number): number`.
 - `frameSpec(index, gw, gh): { kind: 'white' | 'black' | 'bit'; axis?: 'x' | 'y'; bit?: number; inverted?: boolean }` and `bitValue(spec, x, y): 0 | 1` — what colour the cell `(x, y)` shows in that frame.
 - `drawScanFrame(ctx, spec, pw, ph, gw, gh)` paints the frame with coarse cells (a `PatternContext`-style recording stand-in tests it).
@@ -41,12 +41,13 @@ Phone → laptop: `hello { width, height }`, `ready` (camera running, phone stea
 ## Decoding — pure module `src/calibrate/decode.ts`
 - Input: for each scan frame the camera's grey image (luma, `Uint8ClampedArray`, `width*height`), the same size for every frame.
 - `decodeScan(frames: GrayFrame[], gw: number, gh: number, minContrast: number): ScanMap` where `ScanMap = { width; height; mapX: Uint16Array; mapY: Uint16Array; mask: Uint8Array }`.
-- A camera pixel is **lit** when `white - black >= minContrast` (default `MIN_CONTRAST = 40`). A bit is read by comparing the pattern frame with its inverse (`p > inv` means 1), which needs no global threshold. A pixel whose bit comparison margin is under `MIN_BIT_MARGIN = 12` for any bit is marked unreliable (mask 0). Unlit or unreliable pixels get mask 0; reliable ones get mask 1 and `mapX`, `mapY` as the coarse grid cell `(fromGray(bitsX), fromGray(bitsY))`, clamped to `gw-1`, `gh-1`.
+- A camera pixel is **lit** when `white - black >= minContrast` (default `MIN_CONTRAST = 40`). A bit is read by comparing the pattern frame with its inverse (`p > inv` means 1), which needs no global threshold. A pixel whose bit comparison margin is under `MIN_BIT_MARGIN = 12` for any bit is marked unreliable (mask 0). Unlit or unreliable pixels get mask 0; reliable ones get mask 1 and `mapX`, `mapY` as the coarse grid cell `(fromGray(bitsX), fromGray(bitsY))`. A cell outside the grid (`>= gw` or `>= gh`, possible when the grid is not a power of two) is also marked unreliable (mask 0), not clamped.
 - Cells map back to projector pixels as `(cell + 0.5) * STEP_PX`.
 
 ## Corners — pure module `src/calibrate/corners.ts`
 - `projectorPointAt(map: ScanMap, cx, cy, radius = TAP_RADIUS_PX, minValid = 0.5): Vec2 | null` — takes the reliable pixels within `radius` of the camera tap `(cx, cy)` (`TAP_RADIUS_PX = 12`, a disc), fits a plane `proj = a + b*dx + c*dy` to `mapX` and `mapY` separately by least squares on the offsets from the tap, and returns the value at the tap `(a_x, a_y)` in projector pixels. `null` when fewer than `minValid` of the disc's pixels are reliable, when fewer than 6 reliable pixels exist, or when the fit is degenerate.
-- `tapsToCorners(map, taps: [Vec2, Vec2, Vec2, Vec2], projector: { w: number; h: number }): { corners: Corners; failed: number[] } | null` — converts four taps (in camera pixels) into unit-space corners (`x / projector.w`, `y / projector.h`, Y down), order tl, tr, br, bl. `failed` lists the indices that could not be resolved; `null` unless all four resolve and the result passes `isValidQuad` (the same validity the Editor uses).
+- `tapsToCorners(map, taps: [Vec2, Vec2, Vec2, Vec2], projector: { w: number; h: number }): { ok: true; corners: Corners } | { ok: false; failed: number[]; reason: 'unlit' | 'invalid-quad' }` — converts four taps (in camera pixels) into unit-space corners (`x / projector.w`, `y / projector.h`, Y down), order tl, tr, br, bl. `failed` lists the taps that could not be read (reason `'unlit'`); when all four read but the quad fails `isValidQuad` the reason is `'invalid-quad'` and `failed` is empty.
+- The plane fit is a plain least-squares fit (no outlier trimming). A tap exactly on a box edge can straddle two surfaces and be pulled by a few pixels; the user nudges as usual.
 - `applyCalibration(surfaces, results: Record<surfaceId, Corners>): Surface[]` — replaces the corners of the faces present in `results`, leaving every other field (`id`, `srcRect`) and every other face untouched; unknown ids are ignored; the result passes the shared `parseSurfaceList`.
 
 ## Camera page — `camera.html` / `src/calibrate/CameraApp.tsx`
@@ -57,16 +58,17 @@ Phone → laptop: `hello { width, height }`, `ready` (camera running, phone stea
 ## Editor — `src/ui/CalibratePanel.tsx` and `Editor.tsx`
 - Toolbar button **Calibrate** (disabled with a short title when `getUserMedia`-capable phone pairing is not possible, i.e. `fetch` is missing — effectively never — or the Output cannot be opened). A panel (like Setups) shows: link + QR, connection state, **Start scan** (enabled when the phone is connected and an Output window has reported its size), scan progress, then the tapping step with the phone's preview picture, **Apply** and **Cancel**.
 - QR code: a small self-contained generator (no network, no new dependency beyond a vetted tiny QR library pinned to an exact version).
-- The Output window listens for a new `calibrate` channel message `{ type: 'calibrate'; frame: ScanFrameSpec | null; gw; gh }` on the existing BroadcastChannel: `frame` paints the scan frame instead of the picture; `null` returns to normal. Opening the Output window and reporting its size use a new `output-size { w, h }` message (also on the channel). While a scan frame is shown the Output window ignores `surfaces` redraws.
+- The Output window listens on the existing BroadcastChannel for `scan-frame { spec: FrameSpec | null, gw, gh, pw, ph }`: a spec paints that scan frame on a full-window overlay canvas that covers the picture; `null` hides the overlay. The Editor asks for the window size with `probe`, and the Output window answers (and re-reports on resize and fullscreen changes) with `output-size { w, h, fullscreen }`. The panel warns when the Output window is not fullscreen.
+- The relay's request handling is a pure function (`handleCalibRequest`) so it can be unit-tested; the Vite plugin only adapts Node requests to it. The relay also answers `GET /calib/info` with the server's LAN addresses, so the QR link is reachable from the phone even when the Editor was opened as `localhost`.
 - The Editor drives the scan: for each frame it tells the Output window to paint it, waits `SETTLE_MS`, then asks the phone (`show`) and waits for `frame-done`; the order is Output paints → settle → phone captures → done → next.
 - Tapping UI: the preview image is shown full-width; the user taps the corners; a marker shows each tap and a faint polygon shows the face as it is built; **Undo tap** removes the last tap. Face tabs of the Editor are reused for "which face am I tapping".
 
 ## Edge cases (each tested where pure)
 1. `grayCode`/`fromGray` are inverses for `0..2^16`; adjacent codes differ in exactly one bit.
-2. `frameCount` for 1920×1080 at `STEP_PX = 4` is 36; `bitsFor` handles 1, 2, 3, non-powers of two.
+2. `frameCount` for 1920×1080 at `STEP_PX = 4` is 38; `bitsFor` handles 1, 2, 3, non-powers of two.
 3. Decoding a synthetic perfect scan (camera = identity warp of the projector) reproduces every cell exactly; a camera that sees only part of the projector masks the rest as 0.
-4. A synthetic scan through a known homography (camera sees the projector in perspective) decodes so that `tapsToCorners` for the four known camera positions of a rectangle returns the known projector corners within 0.5 px.
-5. Noise: with ±8 grey-level noise the lit rate stays above 99% and decoded cells stay within one cell of the truth for lit pixels; with `MIN_BIT_MARGIN` guarding, no wildly wrong cells appear.
+4. A synthetic scan through a known homography (camera sees the projector in perspective) decodes so that `tapsToCorners` for the four known camera positions of a rectangle returns the known projector corners within 1 px.
+5. Noise: with ±8 grey-level noise the lit rate stays above 99% and decoded cells equal the truth exactly (the stripe comparison is robust to this noise).
 6. `projectorPointAt` returns `null` on a mostly unlit disc and on fewer than 6 reliable pixels; recovers a known plane to under 0.05 px.
 7. `tapsToCorners` returns `null` for a bow-tie (taps in the wrong order) and lists unresolved taps in `failed`.
 8. `applyCalibration` leaves unspecified faces and all non-corner fields untouched, ignores unknown ids and returns a list that `parseSurfaceList` accepts.
