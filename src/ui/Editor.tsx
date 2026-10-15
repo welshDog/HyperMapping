@@ -407,6 +407,7 @@ export function Editor() {
           surfaces={surfacesRef.current}
           onApply={(list) => adoptLayoutRef.current(list)}
           onClose={() => setCalibrateOpen(false)}
+          onOpenOutput={openOutput}
         />
       )}
     </div>

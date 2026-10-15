@@ -16,6 +16,8 @@ interface Props {
   surfaces: Surface[];
   onApply: (list: Surface[]) => void;
   onClose: () => void;
+  /** Opens the Output window (the Editor toolbar is hidden behind this panel). */
+  onOpenOutput: () => void;
 }
 
 type Stage = 'connect' | 'scanning' | 'decoding' | 'tap';
@@ -30,7 +32,7 @@ const CORNER_NAMES = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
 const btn = 'rounded-lg px-4 py-3 font-medium disabled:opacity-40';
 
 /** Pair a phone, run the scan, tap the corners, and apply the result. A modal panel over the Editor. */
-export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
+export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput }: Props) {
   const session = useMemo(() => newSessionId(), []);
   const [addresses, setAddresses] = useState<string[] | null>(null);
   const [phone, setPhone] = useState<{ width: number; height: number } | null>(null);
@@ -333,7 +335,7 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
           <div className="space-y-3">
             <ol className="list-decimal space-y-1 pl-5 text-zinc-300">
               <li>Scan this code with the phone and allow the camera. Point the phone at the box and hold it still.</li>
-              <li>Press <b>Open output window</b> in the toolbar, drag it to the projector and click it once for fullscreen.</li>
+              <li>Press <b>Open output window</b> below. A small window opens: drag it onto the projector screen, then click inside it once to make it fullscreen.</li>
               <li>Press <b>Start scan</b>. The projector flashes for about 20 to 30 seconds.</li>
             </ol>
             <div className="flex flex-wrap items-center gap-4">
@@ -362,7 +364,12 @@ export function CalibratePanel({ surfaces, onApply, onClose }: Props) {
                     : 'Could not find a network address. Open the app from the phone’s address instead of localhost, or check Wi-Fi.'}
                 </p>
               )}
-              <ul className="space-y-1">
+              <ul className="space-y-2">
+                <li>
+                  <button className={`${btn} bg-zinc-700`} onClick={onOpenOutput}>
+                    Open output window
+                  </button>
+                </li>
                 <li>Phone: {phone ? `connected (${phone.width}×${phone.height})` : 'waiting…'}</li>
                 <li>
                   Output window:{' '}
