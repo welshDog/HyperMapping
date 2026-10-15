@@ -1,3 +1,5 @@
+import { createStreamVideo, type StreamVideo } from './stream-video';
+
 export const PATTERN_WIDTH = 1280;
 export const PATTERN_HEIGHT = 720;
 
@@ -5,8 +7,6 @@ const COLS = 16;
 const ROWS = 9;
 const LETTERS = 'ABCDEFGHIJKLMNOP';
 const TICK_MS = 500;
-/** Off-screen but NOT display:none, so mobile browsers keep producing frames. */
-const HIDDEN_STYLE = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
 
 /** The only drawing calls the pattern uses, so a recording stand-in can test it without a canvas. */
 export type PatternContext = Pick<
@@ -151,18 +151,12 @@ export interface PatternSource {
  * when the browser cannot do that, in which case the app simply stays black until a video loads.
  */
 export function createPatternSource(): PatternSource | null {
-  let stream: MediaStream | null = null;
-  let video: HTMLVideoElement | null = null;
+  let sv: StreamVideo | null = null;
   let timer: number | null = null;
   const release = () => {
     if (timer !== null) window.clearInterval(timer);
     timer = null;
-    stream?.getTracks().forEach((track) => track.stop());
-    if (video) {
-      video.pause();
-      video.srcObject = null;
-      video.remove();
-    }
+    sv?.dispose();
   };
   try {
     const canvas = document.createElement('canvas');
@@ -173,21 +167,8 @@ export function createPatternSource(): PatternSource | null {
 
     let tick = 0;
     drawTestPattern(ctx, PATTERN_WIDTH, PATTERN_HEIGHT, tick);
-    stream = canvas.captureStream(10);
-
-    const el = document.createElement('video');
-    video = el;
-    el.muted = true;
-    el.playsInline = true;
-    el.setAttribute('playsinline', '');
-    el.style.cssText = HIDDEN_STYLE;
-    el.srcObject = stream;
-    document.body.appendChild(el);
-
-    const ensurePlaying = () => {
-      if (el.paused) el.play()?.catch(() => {});
-    };
-    ensurePlaying();
+    sv = createStreamVideo(canvas, 10);
+    if (!sv) return null;
 
     // Redrawing (the dot toggles) keeps frames flowing through the stream.
     timer = window.setInterval(() => {
@@ -200,7 +181,7 @@ export function createPatternSource(): PatternSource | null {
       }
     }, TICK_MS);
 
-    return { video: el, ensurePlaying, dispose: release };
+    return { video: sv.video, ensurePlaying: sv.ensurePlaying, dispose: release };
   } catch {
     release();
     return null;
