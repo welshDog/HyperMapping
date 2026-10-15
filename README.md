@@ -1,6 +1,6 @@
 # HyperMapping
 
-Web-first projection mapping for phones. Milestone 1: four-corner perspective pin + local video.
+Web-first projection mapping for phones and laptops: pin a video (or a generated picture) onto a surface or a whole box, with several faces, a 3D virtual-projector simulator, phone-camera auto-calibration, saved setups, random visuals and sound reaction. It runs in the browser (WebGPU, with a WebGL2 fallback) and needs no app install.
 
 ## Start it with one click (Windows)
 
@@ -22,6 +22,7 @@ then open `https://localhost:5173`.
 
 ## Use
 
+- **Demo video** loads the bundled HYPERmapping demo (about 10 MB, 720p) with one tap, so you can try mapping without finding a video first. It is served from `public/demo/`.
 - **Load video** picks a file from the phone. **Drag the four pins** (for the selected face) onto the corners of your surface.
 - **Play mode** hides every control. To come back, tap or click the invisible top-left square, or press Esc (a first Esc in fullscreen only leaves fullscreen; press Esc again).
 - **Open output window** opens `#output` (desktop/tablet: drag it to the projector and click once for fullscreen).
@@ -92,15 +93,34 @@ The visuals can react to music. In the Visuals panel, under **Sound**, press **L
 - The Editor also **remembers your last layout** and restores it when you reload. **Start fresh** (tap twice) goes back to a single default face.
 - On an iPhone, Export may open a preview that needs "Save to Files".
 
-## Known limits (M1)
+## Known limits
 
 - A phone cannot use the output window as a second screen; it opens a tab. For a phone plugged into a
   projector over USB-C/HDMI, use Play mode (screen mirror). True extended display needs the native shell (later milestone).
 - iPhone Safari cannot make a non-video element fullscreen, so Play mode stays inside the browser
   chrome there. Use Share > Add to Home Screen and launch from the icon instead (the manifest is fullscreen).
 
-## Verification status
+## Status
 
-Automated tests, typecheck and build pass. The desktop, phone and 20-minute thermal checks
-(Task 10 steps 3-5 in `docs/superpowers/plans/2026-10-14-hypermapping-m1-core.md`) have NOT yet
-been run on real hardware. Add a "Device notes" heading to this README when they are.
+Automated checks: the test suite (about 540 tests), the typecheck and the production build all pass.
+
+Checked by hand by the author, on a laptop and a phone:
+
+- Single-face and multi-face (box) mapping, slices, glued corners, Play mode, the Output window.
+- The virtual-projector simulator (Solve, Send to app).
+- Saved setups and the remembered last layout.
+- The test pattern, the demo video and the Visuals (laptop).
+- Camera calibration end to end: pairing the phone, the scan, tapping corners, Apply and Save result as setup.
+
+Not checked on real hardware yet:
+
+- **How accurate calibration is on a real box with a real projector.** In tests with a simulated camera the recovered corners are within about 0.2 pixel; a real room, lens and projector will be less exact, so expect to nudge the pins.
+- **Sound reaction with a real microphone.** The microphone sensitivity numbers (noise floor, gate) are educated guesses; if the bars jump in a silent room, lower Sensitivity.
+- **The 20-minute thermal run** and the phone frame rate for Plasma and Kaleidoscope over a long session (phones use a cheaper version of those two looks).
+- iPhone-specific behaviour of the camera and microphone pages.
+
+## Project layout and design documents
+
+- `src/renderer/`: the WebGPU and WebGL2 renderers (one shared interface). `src/warp/`: the perspective maths. `src/surfaces/`: faces, slices and glued corners. `src/sim/`: the 3D virtual projector. `src/setups/`: saving and loading. `src/calibrate/`: camera auto-calibration. `src/generator/`: the random visuals. `src/audio/`: sound reaction. `src/sources/`: video, the test pattern and the demo. `src/ui/`: the screens. `tools/`: the small server plugin that links the phone camera to the laptop.
+- Every feature has a design spec and an implementation plan in `docs/superpowers/specs/` and `docs/superpowers/plans/` (the original idea trail is in `docs/notes/`).
+- `npm test` runs the tests; `npm run build` makes the production build.

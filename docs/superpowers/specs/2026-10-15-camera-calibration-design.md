@@ -86,3 +86,10 @@ Phone → laptop: `hello { width, height }`, `ready` (camera running, phone stea
 - **The relay is new surface area on the dev/preview server**; it is LAN-only, token-gated, capped and in memory, and is only active while the app is served by Vite.
 - **Phone motion sensors** need a permission on iOS; if declined the steadiness check is skipped and a note is shown.
 - **Screen glare and dark boxes** limit the lit area; faces that cannot be tapped are reported and the old pins stay.
+
+## As built (differences from the design above, 2026-10-15)
+- The relay also answers `GET /calib/<session>/<box>?after=latest` instantly with the current cursor so a reloaded phone page never replays an old scan; only a numeric `after` with nothing new is held for up to 20 s. The relay's LAN address list drops link-local (169.254.x.x) and loopback addresses and lists private ranges first.
+- Pairing uses `skipBacklog` on the phone, a per-scan gate on the laptop (a `scan-result` is accepted only after every frame of THAT scan was confirmed), a 30 s decode timeout and a Stop button, and a "Scan again" button.
+- The phone's analysis size is bounded by pixel count (about 400 000 px, at most 640 wide) so a portrait phone's result still fits the relay's body cap. Messages the phone shows are specific: busy, unreachable, or an error code.
+- The panel has its own **Open output window** button (the toolbar is hidden behind it) and a **Save result as setup** row (name box + button) so a result can be kept before Apply.
+- The measured accuracy in the unit tests (simulated camera) is about 0.2 projector pixel; real-world accuracy is not yet measured.

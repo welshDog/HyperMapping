@@ -33,6 +33,18 @@ Agreed with Lyndz:
 5. **Auto-calibration**: camera pattern capture to homography.
 6. **(Later) Native shell**: Capacitor/native for true extended display, if device warrants.
 
+### Status (updated 2026-10-15)
+| Milestone | State | Where it is documented |
+|---|---|---|
+| 1. Core | Built and checked on laptop and phone. | `plans/2026-10-14-hypermapping-m1-core.md` |
+| 2. Scenes | Built as **Setups** (save/load, export/import, remembered last layout). It stores layouts in browser localStorage, not IndexedDB, and does not save the video. | `specs/2026-10-14-save-load-design.md` |
+| 3. Mesh warp / multi-surface | **Multi-surface (box mapping) built**: up to 6 faces, slices, glued corners. Bezier/mesh patches for curved surfaces were **not** built. | `specs/2026-10-14-multi-surface-design.md`, `specs/2026-10-14-glued-corners-design.md` |
+| 4. Generative + audio-reactive | **Built**: four random looks with Randomize, auto-shuffle, codes and a speed slider; microphone reaction (bass, treble, volume, beat). The microphone tuning still needs a real-mic test. | `specs/2026-10-15-random-visuals-design.md`, `specs/2026-10-15-sound-and-speed-design.md` |
+| 5. Auto-calibration | **Built** with structured-light stripes and tapped corners (not ArUco markers); a phone is the camera. Accuracy on a real box and projector is not yet measured. | `specs/2026-10-15-camera-calibration-design.md` |
+| 6. Native shell | Not started. | |
+
+Also built beyond the original list: a 3D **virtual-projector simulator** (`specs/2026-10-14-virtual-projector-design.md`), a built-in **test pattern** (`specs/2026-10-14-test-pattern-design.md`), a bundled **demo video**, and a one-click Windows launcher.
+
 ## Critical files to create (greenfield, in `HyperMapping/`)
 `package.json` (Vite + React + TS + Tailwind), `src/renderer/*`, `src/warp/*`, `src/ui/*`, `src/sources/*`, `src/scenes/*`, `src/output/*`, `src/calibrate/*`. Keep the Gemini notes in `docs/notes/`.
 

@@ -78,3 +78,11 @@ A **Sound** section below the existing controls:
 - With volume driving speed, each window integrates its own time, so windows are close but no longer pixel-identical while sound plays (they stay identical with no sound).
 - The microphone prompt needs a user tap, and iOS may suspend the `AudioContext` until then; `start()` resumes it from the tap.
 - Browser echo cancellation / auto gain are turned off on purpose so music dynamics survive; some browsers or devices ignore the constraints.
+
+## As built (differences from the design above, 2026-10-15)
+- The microphone is polled from a tiny inline Web Worker (a timer in a hidden or covered Editor tab is throttled to about once a second); it falls back to `setInterval`. The analyser's range is set to -85 dB / -25 dB (`ANALYSER_MIN_DB`, `ANALYSER_MAX_DB`) and the tracker's noise gate has hysteresis (opens above 0.05, closes below 0.03). These numbers are educated guesses that need a real-microphone test; an adaptive per-band noise floor is the planned next step if a quiet room still jumps.
+- `bandLevels` takes the MEAN of the bins in a band, so a single synthetic tone fills only part of the bass band (a 60 Hz test tone reads about 0.37, not above 0.5); the adaptive tracker rescales per band, so absolute level hardly matters.
+- The beat detector is fed the sensitivity-1 smoothed bass (the Sensitivity slider is applied afterwards for the bars and the broadcast levels), otherwise a high setting would saturate the bass and make beats impossible.
+- The Editor's own picture is fed directly (`setAudio` on its own generator source) because a BroadcastChannel never delivers a message to the window that sent it.
+- The Speed slider also scales the loudness speed-up (the loudness time increment is multiplied by the user's speed).
+- `start()` handling: only from a tap, results are ignored after the hook's own stop, and the status distinguishes Off, Starting, Listening, blocked, no microphone and "could not start" (a busy microphone).
