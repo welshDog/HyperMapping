@@ -34,14 +34,17 @@ describe('shaderTime', () => {
 
 describe('setSpeed', () => {
   it('is continuous at the change instant and advances at the new speed', () => {
+    // the prior speed (0.3) is not in the tested list, so every iteration really changes speed
+    for (const before of [0.3, 1.3]) {
     for (const sp of [0.25, 0.5, 1, 1.7, 2]) {
       for (const t of [0, 1234, 60000]) {
-        const prev = { ...base(), speed: 0.5, timeAnchor: 2, speedChangedAt: 0 };
+        const prev = { ...base(), speed: before, timeAnchor: 2, speedChangedAt: 0 };
         const next = setSpeed(prev, sp, t);
         expect(Math.abs(shaderTime(next, t) - shaderTime(prev, t))).toBeLessThan(1e-9);
         expect(shaderTime(next, t + 2000) - shaderTime(next, t)).toBeCloseTo(2 * next.speed, 9);
         expect(isValidState(next)).toBe(true);
       }
+    }
     }
   });
   it('stays continuous over two successive changes', () => {

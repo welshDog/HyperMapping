@@ -5,6 +5,18 @@ import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generato
 
 const base = { ...initialState(1000, () => 0.3) };
 
+describe('time fields are preserved', () => {
+  const s = { ...base, on: true, speed: 1.7, timeAnchor: 42, speedChangedAt: 777 };
+  const keep = (n: typeof s) => {
+    expect(n.speed).toBe(1.7);
+    expect(n.timeAnchor).toBe(42);
+    expect(n.speedChangedAt).toBe(777);
+  };
+  it('pickStyle', () => keep(pickStyle(s, 'neon', 5000, () => 0.4)));
+  it('setShuffle', () => keep(setShuffle(s, 30, 5000)));
+  it('randomizeOn', () => keep(randomizeOn(s, 5000, () => 0.6)));
+});
+
 describe('setOn', () => {
   it('turning on resets both clocks to now and drops a stale fade', () => {
     const s = setOn({ ...base, prev: { style: 'neon', seed: 5 } }, true, 9000);

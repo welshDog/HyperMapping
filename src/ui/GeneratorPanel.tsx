@@ -23,6 +23,7 @@ const STATUS_TEXT: Record<AudioStatus, string> = {
   listening: 'Listening',
   denied: "Microphone blocked: allow it in the browser's site settings",
   'no-mic': 'No microphone found',
+  starting: 'Starting… allow the microphone if asked',
   unsupported: 'Could not start the microphone (it may be in use by another app, or not supported here)',
 };
 
@@ -81,9 +82,10 @@ export function GeneratorPanel({ state, available, patternForce, onChange, audio
   const cls = (pressed: boolean) => `${BASE} ${!available ? DISABLED : pressed ? ON : OFF}`;
 
   const listening = audio.status === 'listening';
+  const starting = audio.status === 'starting';
   const soundOk = audio.supported;
   /** One bg-* class per state: unsupported, listening (Stop) and idle (Listen) replace each other. */
-  const listenCls = `${BASE} min-w-[7.5rem] ${!soundOk ? DISABLED : listening ? ON : OFF}`;
+  const listenCls = `${BASE} min-w-[7.5rem] ${!soundOk || starting ? DISABLED : listening ? ON : OFF}`;
   const pct = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 100);
 
   const copy = async () => {
@@ -259,14 +261,14 @@ export function GeneratorPanel({ state, available, patternForce, onChange, audio
           <div className="flex items-center gap-3">
             <button
               aria-pressed={listening}
-              disabled={!soundOk}
+              disabled={!soundOk || starting}
               className={listenCls}
               onClick={() => (listening ? audio.stop() : void audio.start())}
             >
-              {listening ? 'Stop' : 'Listen'}
+              {listening ? 'Stop' : starting ? 'Starting…' : 'Listen'}
             </button>
             <span role="status" className="text-xs text-zinc-400">
-              {soundOk ? STATUS_TEXT[audio.status] : 'Not supported in this browser'}
+              {soundOk ? STATUS_TEXT[audio.status] : ''}
             </span>
           </div>
 

@@ -9,7 +9,7 @@ import { randomizeState, type GeneratorState } from '../generator/shuffle';
 import type { GeneratorSource } from '../generator/source';
 import { getBrowserStore } from '../setups/browser-store';
 
-export type AudioStatus = 'off' | 'listening' | 'denied' | 'no-mic' | 'unsupported';
+export type AudioStatus = 'off' | 'starting' | 'listening' | 'denied' | 'no-mic' | 'unsupported';
 export interface MeterLevels {
   bass: number;
   treble: number;
@@ -125,6 +125,7 @@ export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateG
     const listener = listenerRef.current;
     const myEpoch = epochRef.current;
     startingRef.current = true;
+    setStatus('starting');
     let result: Awaited<ReturnType<AudioListener['start']>>;
     try {
       result = await listener.start();
