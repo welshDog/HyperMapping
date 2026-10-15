@@ -1,6 +1,10 @@
+import { sendResultFor, type SendResult } from './send-result';
+
 export interface RelayClient {
   /** Post a message to the other device; resolves false if the server refused or was unreachable. */
   send(text: string): Promise<boolean>;
+  /** Like send, but says why it failed (busy, unreachable, refused, too big). */
+  sendDetailed(text: string): Promise<SendResult>;
   /** Called for every message from the other device, in order. */
   onMessage(fn: (text: string) => void): void;
   close(): void;
@@ -71,15 +75,20 @@ export function createRelayClient(session: string, role: 'laptop' | 'phone', fet
   const synced = options.skipBacklog ? syncToLatest() : Promise.resolve();
   void synced.then(loop);
 
+  const sendDetailed = async (text: string): Promise<SendResult> => {
+    try {
+      const res = await fetchFn(`/calib/${session}/${theirs}`, { method: 'POST', body: text, cache: 'no-store' });
+      return sendResultFor(res.status);
+    } catch {
+      return sendResultFor(null);
+    }
+  };
+
   return {
     synced,
+    sendDetailed,
     async send(text) {
-      try {
-        const res = await fetchFn(`/calib/${session}/${theirs}`, { method: 'POST', body: text, cache: 'no-store' });
-        return res.ok;
-      } catch {
-        return false;
-      }
+      return (await sendDetailed(text)).kind === 'ok';
     },
     onMessage(fn) {
       handler = fn;

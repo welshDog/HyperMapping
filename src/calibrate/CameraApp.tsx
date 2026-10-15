@@ -6,6 +6,7 @@ import { accumulateLuma, finishLuma } from './luma';
 import { CAPTURE_FRAMES, frameCount } from './patterns';
 import { encodeCalibMsg, parseCalibMsg, type CalibMsg } from './protocol';
 import { createRelayClient, type RelayClient } from './relay-client';
+import { helloFailureText } from './send-result';
 import { MOTION_LIMITS, isMoving, magnitude } from './steady';
 
 const FRAME_GAP_MS = 40;
@@ -195,14 +196,14 @@ export function CameraApp() {
         setStatus('Could not reach the laptop. Check both are on the same Wi-Fi, then tap Start camera again.');
         return;
       }
-      const hello = await sendChecked({ type: 'hello', width: w, height: h });
+      const hello = await relay.sendDetailed(encodeCalibMsg({ type: 'hello', width: w, height: h }));
       if (!mountedRef.current) return;
-      if (!hello) {
+      if (hello.kind !== 'ok') {
         relay.close();
         relayRef.current = null;
         startedRef.current = false;
         setStage('error');
-        setStatus('The laptop server is busy. Close old calibration tabs or wait a few minutes, then tap Start again.');
+        setStatus(helloFailureText(hello));
         return;
       }
       send({ type: 'ready' });
