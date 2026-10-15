@@ -94,4 +94,42 @@ describe('parseMsg', () => {
   it('drops unknown fields from a pattern message', () => {
     expect(parseMsg({ type: 'pattern', on: true, evil: 1 })).toEqual({ type: 'pattern', on: true });
   });
+  it('accepts a probe and an output-size report', () => {
+    expect(parseMsg({ type: 'probe' })).toEqual({ type: 'probe' });
+    expect(parseMsg({ type: 'output-size', w: 1920, h: 1080, fullscreen: true })).toEqual({
+      type: 'output-size',
+      w: 1920,
+      h: 1080,
+      fullscreen: true,
+    });
+  });
+  it('rejects a bad output-size', () => {
+    for (const bad of [
+      { type: 'output-size', w: 0, h: 10, fullscreen: true },
+      { type: 'output-size', w: 10, h: 1.5, fullscreen: true },
+      { type: 'output-size', w: 10, h: 10 },
+      { type: 'output-size', w: 100000, h: 10, fullscreen: false },
+    ]) {
+      expect(parseMsg(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+  it('accepts a scan frame, or null to go back to normal', () => {
+    const base = { type: 'scan-frame', gw: 16, gh: 8, pw: 64, ph: 32 };
+    expect(parseMsg({ ...base, spec: { kind: 'white' } })).toEqual({ ...base, spec: { kind: 'white' } });
+    expect(parseMsg({ ...base, spec: null })).toEqual({ ...base, spec: null });
+    const ones = { type: 'scan-frame', gw: 1, gh: 1, pw: 1, ph: 1, spec: null };
+    expect(parseMsg(ones)).toEqual(ones);
+  });
+  it('rejects a malformed scan frame', () => {
+    const base = { type: 'scan-frame', gw: 16, gh: 8, pw: 64, ph: 32 };
+    for (const bad of [
+      { ...base, spec: { kind: 'nope' } },
+      { ...base, spec: undefined },
+      { ...base, spec: { kind: 'white' }, gw: 0 },
+      { ...base, spec: { kind: 'white' }, pw: 1e9 },
+      { ...base, spec: { kind: 'white' }, gh: 'x' },
+    ]) {
+      expect(parseMsg(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
 });

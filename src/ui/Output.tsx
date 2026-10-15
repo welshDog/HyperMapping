@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useOutputFeed } from './useOutputFeed';
 import { useRenderer } from './useRenderer';
+import { useScanDisplay } from './useScanDisplay';
 import { useWakeLock } from './wakeLock';
 
 /** Projector view: nothing but the warped video. Click once to go fullscreen. */
@@ -9,6 +10,7 @@ export function Output() {
   const { renderer, error } = useRenderer(canvasRef);
   useWakeLock(true); // a projector screen must never dim
   const { resumeVideo } = useOutputFeed(renderer);
+  const scanRef = useScanDisplay();
 
   return (
     <div
@@ -17,6 +19,7 @@ export function Output() {
       onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})}
     >
       <canvas ref={canvasRef} className="h-full w-full" />
+      <canvas ref={scanRef} className="absolute inset-0 h-full w-full" style={{ display: 'none' }} />
       {error && <p className="absolute left-4 top-4 text-sm text-amber-400">{error}</p>}
     </div>
   );
