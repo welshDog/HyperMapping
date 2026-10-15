@@ -52,7 +52,7 @@ Let a phone camera find the pins for you.
 
 1. Press **Calibrate**, scan the QR code with the phone (accept the certificate warning, allow the camera) and point it at the box. Hold it still.
 2. Open the **Output window**, drag it to the projector and click it once for fullscreen.
-3. Press **Start scan**. The projector flashes stripes for about 15 seconds; the phone watches.
+3. Press **Start scan**. The projector flashes stripes for about 20 to 30 seconds; the phone watches.
 4. The phone's picture appears. For each face tap its four corners: top-left, top-right, bottom-right, bottom-left. **Apply** replaces those faces' pins (save a setup first if you want to keep the old ones); then nudge as usual.
 
 - The phone and the computer must be on the same Wi-Fi. The link goes through the app's own server, so use the one-click launcher (or `npm run dev` / `npm run preview`), not a static host.
