@@ -13,6 +13,18 @@ describe('setOn', () => {
     expect(s.changedAt).toBe(9000);
     expect(s.prev).toBeNull();
   });
+  it('turning on also restarts the shader time and keeps speed', () => {
+    const s = setOn({ ...base, speed: 2, timeAnchor: 40, speedChangedAt: 3 }, true, 9000);
+    expect(s.timeAnchor).toBe(0);
+    expect(s.speedChangedAt).toBe(9000);
+    expect(s.speed).toBe(2);
+  });
+  it('turning off leaves the time fields', () => {
+    const on = { ...base, on: true, speed: 2, timeAnchor: 40, speedChangedAt: 3 };
+    const s = setOn(on, false, 9000);
+    expect(s.timeAnchor).toBe(40);
+    expect(s.speedChangedAt).toBe(3);
+  });
   it('turning on when already on changes nothing (no visual jump)', () => {
     const on = { ...base, on: true };
     expect(setOn(on, true, 9000)).toBe(on);

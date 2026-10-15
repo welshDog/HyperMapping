@@ -1,14 +1,15 @@
 import type { KeyValueStore } from '../setups/setups';
+import { SPEED_MAX, SPEED_MIN } from './speed';
 import { initialState, isValidState, type GeneratorState } from './shuffle';
 
 export const GENERATOR_KEY = 'hypermapping.generator.v1';
 
-/** Remember the look, the shuffle choice and the style pick. `on` is never remembered. Never throws. */
+/** Remember the look, the shuffle choice, the style pick and the speed. `on` is never remembered. Never throws. */
 export function saveGeneratorState(store: KeyValueStore, state: GeneratorState): void {
   try {
     store.setItem(
       GENERATOR_KEY,
-      JSON.stringify({ look: state.look, shuffleSec: state.shuffleSec, stylePick: state.stylePick }),
+      JSON.stringify({ look: state.look, shuffleSec: state.shuffleSec, stylePick: state.stylePick, speed: state.speed }),
     );
   } catch {
     // storage full or blocked: forgetting is fine
@@ -22,6 +23,10 @@ function cleanLook(x: unknown): unknown {
   return { style: o.style, seed: o.seed };
 }
 
+function isValidSpeed(x: unknown): x is number {
+  return typeof x === 'number' && Number.isFinite(x) && x >= SPEED_MIN && x <= SPEED_MAX;
+}
+
 /** The remembered state with `on` false, or a fresh one when nothing usable is stored. Never throws. */
 export function loadGeneratorState(store: KeyValueStore | null, now: number, rng: () => number): GeneratorState {
   const fresh = initialState(now, rng);
@@ -32,6 +37,8 @@ export function loadGeneratorState(store: KeyValueStore | null, now: number, rng
     const o = JSON.parse(raw) as Record<string, unknown> | null;
     if (typeof o !== 'object' || o === null) return fresh;
     const candidate = { ...fresh, look: cleanLook(o.look), shuffleSec: o.shuffleSec, stylePick: o.stylePick, on: false };
+    if (!isValidSpeed(o.speed)) candidate.speed = 1;
+    else candidate.speed = o.speed;
     return isValidState(candidate) ? candidate : fresh;
   } catch {
     return fresh;

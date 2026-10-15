@@ -1,3 +1,4 @@
+import { SPEED_MAX, SPEED_MIN } from './speed';
 import { isValidLook, LOOK_STYLES, randomLook, type Look, type StylePick } from './look';
 
 export const FADE_MS = 1500;
@@ -11,6 +12,9 @@ export interface GeneratorState {
   shuffleSec: 0 | 15 | 30 | 60;
   startedAt: number;
   stylePick: StylePick;
+  speed: number;
+  timeAnchor: number;
+  speedChangedAt: number;
 }
 
 /** Smoothstep 0..1 over `ms` since `changedAt`; clamped on both ends. */
@@ -54,6 +58,9 @@ export function initialState(now: number, rng: () => number): GeneratorState {
     shuffleSec: 0,
     startedAt: now,
     stylePick: 'auto',
+    speed: 1,
+    timeAnchor: 0,
+    speedChangedAt: now,
   };
 }
 
@@ -67,6 +74,9 @@ export function isValidState(x: unknown): x is GeneratorState {
     typeof o.changedAt === 'number' && Number.isFinite(o.changedAt) &&
     typeof o.startedAt === 'number' && Number.isFinite(o.startedAt) &&
     typeof o.shuffleSec === 'number' && (SHUFFLE_CHOICES as readonly number[]).includes(o.shuffleSec) &&
-    typeof o.stylePick === 'string' && (o.stylePick === 'auto' || (LOOK_STYLES as readonly string[]).includes(o.stylePick))
+    typeof o.stylePick === 'string' && (o.stylePick === 'auto' || (LOOK_STYLES as readonly string[]).includes(o.stylePick)) &&
+    typeof o.speed === 'number' && Number.isFinite(o.speed) && o.speed >= SPEED_MIN && o.speed <= SPEED_MAX &&
+    typeof o.timeAnchor === 'number' && Number.isFinite(o.timeAnchor) && o.timeAnchor >= 0 &&
+    typeof o.speedChangedAt === 'number' && Number.isFinite(o.speedChangedAt)
   );
 }

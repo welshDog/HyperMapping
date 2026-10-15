@@ -142,6 +142,9 @@ describe('parseMsg', () => {
       shuffleSec: 30,
       startedAt: 500,
       stylePick: 'auto',
+      speed: 1.5,
+      timeAnchor: 2,
+      speedChangedAt: 800,
     });
     it('accepts a valid state and returns an equal object', () => {
       const state = st();
@@ -157,7 +160,7 @@ describe('parseMsg', () => {
         state: { ...st(), look: { style: 'neon', seed: 123 }, prev: { style: 'plasma', seed: 5 } },
       });
       expect(Object.keys((m as { state: object }).state).sort()).toEqual(
-        ['changedAt', 'look', 'on', 'prev', 'shuffleSec', 'startedAt', 'stylePick'],
+        ['changedAt', 'look', 'on', 'prev', 'shuffleSec', 'speed', 'speedChangedAt', 'startedAt', 'stylePick', 'timeAnchor'],
       );
     });
     it('rejects invalid states', () => {
@@ -175,6 +178,11 @@ describe('parseMsg', () => {
         { type: 'generator', state: { ...st(), on: 'yes' } },
         { type: 'generator', state: { ...st(), prev: 'x' } },
         { type: 'generator', state: { ...st(), prev: { style: 'neon' } } },
+        { type: 'generator', state: { ...st(), speed: 0 } },
+        { type: 'generator', state: { ...st(), speed: 'fast' } },
+        { type: 'generator', state: { ...st(), timeAnchor: -1 } },
+        { type: 'generator', state: { ...st(), speedChangedAt: NaN } },
+        { type: 'generator', state: (({ speed: _s, ...r }) => r)(st()) },
       ];
       for (const b of bads) expect(parseMsg(b), JSON.stringify(b)).toBeNull();
     });

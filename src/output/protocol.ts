@@ -43,6 +43,9 @@ export function parseMsg(data: unknown): Msg | null {
         shuffleSec: s.shuffleSec,
         startedAt: s.startedAt,
         stylePick: s.stylePick,
+        speed: s.speed,
+        timeAnchor: s.timeAnchor,
+        speedChangedAt: s.speedChangedAt,
       };
       return { type: 'generator', state };
     }

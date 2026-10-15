@@ -10,7 +10,7 @@ import { FADE_MS, randomizeState, type GeneratorState } from '../generator/shuff
 export function setOn(state: GeneratorState, on: boolean, now: number): GeneratorState {
   if (state.on === on) return state;
   if (!on) return { ...state, on: false };
-  return { ...state, on: true, startedAt: now, changedAt: now, prev: null };
+  return { ...state, on: true, startedAt: now, changedAt: now, prev: null, timeAnchor: 0, speedChangedAt: now };
 }
 
 /** Randomize: turns the generator on (fresh clocks if it was off) and cross-fades to a new look. */

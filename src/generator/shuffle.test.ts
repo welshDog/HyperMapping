@@ -141,3 +141,21 @@ describe('initialState / isValidState', () => {
     for (const x of [null, undefined, 5, 'x', []]) expect(isValidState(x)).toBe(false);
   });
 });
+
+describe('speed fields', () => {
+  it('initialState carries speed 1, timeAnchor 0, speedChangedAt = now', () => {
+    const s = initialState(500, mulberry32(1));
+    expect(s.speed).toBe(1);
+    expect(s.timeAnchor).toBe(0);
+    expect(s.speedChangedAt).toBe(500);
+    expect(isValidState(s)).toBe(true);
+  });
+  it('isValidState rejects bad speed fields', () => {
+    const s = initialState(500, mulberry32(1));
+    const bad: Record<string, unknown>[] = [
+      { speed: 0 }, { speed: 5 }, { speed: NaN }, { timeAnchor: -1 }, { timeAnchor: NaN },
+      { speedChangedAt: NaN }, { speed: undefined }, { timeAnchor: undefined }, { speedChangedAt: undefined },
+    ];
+    for (const b of bad) expect(isValidState({ ...s, ...b }), JSON.stringify(b)).toBe(false);
+  });
+});

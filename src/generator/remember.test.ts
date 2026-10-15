@@ -73,4 +73,32 @@ describe('remembered generator state', () => {
     expect(loadGeneratorState(boom, 9, rng)).toEqual(fresh);
     expect(() => saveGeneratorState(boom, fresh)).not.toThrow();
   });
+
+  it('remembers speed and resets the time fields on load', () => {
+    const store = memStore();
+    saveGeneratorState(store, { ...initialState(1, rng), speed: 1.5, timeAnchor: 99, speedChangedAt: 7 });
+    expect(JSON.parse(store.data[GENERATOR_KEY]).speed).toBe(1.5);
+    const back = loadGeneratorState(store, 5000, rng);
+    expect(back.speed).toBe(1.5);
+    expect(back.timeAnchor).toBe(0);
+    expect(back.speedChangedAt).toBe(5000);
+  });
+
+  it('old format without speed loads with speed 1 and keeps the look', () => {
+    const raw = JSON.stringify({ look: { style: 'neon', seed: 77 }, shuffleSec: 15, stylePick: 'auto' });
+    const back = loadGeneratorState(memStore({ [GENERATOR_KEY]: raw }), 5, rng);
+    expect(back.speed).toBe(1);
+    expect(back.look).toEqual({ style: 'neon', seed: 77 });
+    expect(back.shuffleSec).toBe(15);
+  });
+
+  it('a bad stored speed falls back to 1 while look and shuffle survive', () => {
+    for (const speed of [9, 'fast']) {
+      const raw = JSON.stringify({ look: { style: 'neon', seed: 77 }, shuffleSec: 30, stylePick: 'auto', speed });
+      const back = loadGeneratorState(memStore({ [GENERATOR_KEY]: raw }), 5, rng);
+      expect(back.speed).toBe(1);
+      expect(back.look).toEqual({ style: 'neon', seed: 77 });
+      expect(back.shuffleSec).toBe(30);
+    }
+  });
 });
