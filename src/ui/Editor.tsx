@@ -12,6 +12,7 @@ import { clearAutosave, loadAutosave, saveAutosave } from '../setups/setups';
 import type { Corners, Vec2 } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
 import { SliceEditor } from './SliceEditor';
+import { sliceAspect } from './slice-aspect';
 import { CalibratePanel } from './CalibratePanel';
 import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
@@ -248,9 +249,15 @@ export function Editor() {
     bump(); // the slice panel is a small tree; re-rendering it per move is fine
   };
 
+  // The slice box has the shape of the picture actually on the faces: the test pattern's while it is
+  // showing, otherwise the loaded video's.
   const videoAspect = (() => {
     const v = videoRef.current?.video;
-    return v && v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9;
+    return sliceAspect({
+      force: patternForce,
+      patternAvailable,
+      video: v ? { width: v.videoWidth, height: v.videoHeight } : null,
+    });
   })();
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
