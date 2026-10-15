@@ -12,6 +12,7 @@ import { clearAutosave, loadAutosave, saveAutosave } from '../setups/setups';
 import type { Corners, Vec2 } from '../warp/types';
 import { PinOverlay } from './PinOverlay';
 import { SliceEditor } from './SliceEditor';
+import { CalibratePanel } from './CalibratePanel';
 import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
 import { useRenderer } from './useRenderer';
@@ -43,6 +44,7 @@ export function Editor() {
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [setupsOpen, setSetupsOpen] = useState(false);
+  const [calibrateOpen, setCalibrateOpen] = useState(false);
   const dragBaseRef = useRef<Surface[] | null>(null);
   const [glue, setGlue] = useState(true); // pins on the same spot move together and snap; not saved
   const [notice, setNotice] = useState<string | null>(null);
@@ -363,6 +365,9 @@ export function Editor() {
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={() => setSetupsOpen(true)}>
             Setups
           </button>
+          <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={() => setCalibrateOpen(true)}>
+            Calibrate
+          </button>
           <span className="ml-auto text-xs text-zinc-400">
             {error ?? `${renderer?.kind ?? 'starting…'} · ${Math.round(quality.scale * 100)}% · ${quality.fpsCap}fps`}
           </span>
@@ -394,6 +399,14 @@ export function Editor() {
           onLoad={(list) => adoptLayoutRef.current(list)}
           onStartFresh={startFresh}
           onClose={() => setSetupsOpen(false)}
+        />
+      )}
+
+      {mode === 'edit' && calibrateOpen && (
+        <CalibratePanel
+          surfaces={surfacesRef.current}
+          onApply={(list) => adoptLayoutRef.current(list)}
+          onClose={() => setCalibrateOpen(false)}
         />
       )}
     </div>

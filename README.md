@@ -46,6 +46,19 @@ then open `https://localhost:5173`.
   - The main app's own browser window is not the projector's shape, so its pins may look stretched there while the numbers are correct.
   - Lens shift: the model aims the lens axis at the box centre. Many cheap projectors have a fixed throw offset and are tilted instead, so leave Lens shift at 0 unless the axis really points at the box.
 
+## Camera calibration
+
+Let a phone camera find the pins for you.
+
+1. Press **Calibrate**, scan the QR code with the phone (accept the certificate warning, allow the camera) and point it at the box. Hold it still.
+2. Open the **Output window**, drag it to the projector and click it once for fullscreen.
+3. Press **Start scan**. The projector flashes stripes for about 15 seconds; the phone watches.
+4. The phone's picture appears. For each face tap its four corners: top-left, top-right, bottom-right, bottom-left. **Apply** replaces those faces' pins (save a setup first if you want to keep the old ones); then nudge as usual.
+
+- The phone and the computer must be on the same Wi-Fi. The link goes through the app's own server, so use the one-click launcher (or `npm run dev` / `npm run preview`), not a static host.
+- The pins are only right when the Output window fills the projector image (see the notes under Virtual projector).
+- Dim the room, aim so the projected picture covers the faces, and keep the phone steady. A tap on an unlit part of a face is refused with a message.
+
 ## Saving your setup
 
 - **Setups** (in the toolbar) opens the setups panel. Type a name and press **Save**: the layout of all your faces (pins and slices) is stored in this browser. **Load** brings one back, **Delete** removes one (tap twice). Saving under an existing name replaces it. You can keep up to 30.
