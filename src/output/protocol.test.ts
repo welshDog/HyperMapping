@@ -132,4 +132,51 @@ describe('parseMsg', () => {
       expect(parseMsg(bad), JSON.stringify(bad)).toBeNull();
     }
   });
+
+  describe('generator message', () => {
+    const st = () => ({
+      on: true,
+      look: { style: 'neon', seed: 123 },
+      prev: null as unknown,
+      changedAt: 1000,
+      shuffleSec: 30,
+      startedAt: 500,
+      stylePick: 'auto',
+    });
+    it('accepts a valid state and returns an equal object', () => {
+      const state = st();
+      expect(parseMsg({ type: 'generator', state })).toEqual({ type: 'generator', state });
+      const withPrev = { ...st(), prev: { style: 'plasma', seed: 0 } };
+      expect(parseMsg({ type: 'generator', state: withPrev })).toEqual({ type: 'generator', state: withPrev });
+    });
+    it('drops extra top-level and nested fields', () => {
+      const dirty = { ...st(), evil: 1, look: { style: 'neon', seed: 123, x: 1 }, prev: { style: 'plasma', seed: 5, y: 2 } };
+      const m = parseMsg({ type: 'generator', state: dirty, extra: 1 });
+      expect(m).toEqual({
+        type: 'generator',
+        state: { ...st(), look: { style: 'neon', seed: 123 }, prev: { style: 'plasma', seed: 5 } },
+      });
+      expect(Object.keys((m as { state: object }).state).sort()).toEqual(
+        ['changedAt', 'look', 'on', 'prev', 'shuffleSec', 'startedAt', 'stylePick'],
+      );
+    });
+    it('rejects invalid states', () => {
+      const bads: unknown[] = [
+        { type: 'generator' },
+        { type: 'generator', state: 5 },
+        { type: 'generator', state: null },
+        { type: 'generator', state: { ...st(), changedAt: NaN } },
+        { type: 'generator', state: { ...st(), startedAt: Infinity } },
+        { type: 'generator', state: { ...st(), shuffleSec: 20 } },
+        { type: 'generator', state: { ...st(), look: { style: 'bogus', seed: 1 } } },
+        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: -1 } } },
+        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: 1.5 } } },
+        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: 2 ** 32 } } },
+        { type: 'generator', state: { ...st(), on: 'yes' } },
+        { type: 'generator', state: { ...st(), prev: 'x' } },
+        { type: 'generator', state: { ...st(), prev: { style: 'neon' } } },
+      ];
+      for (const b of bads) expect(parseMsg(b), JSON.stringify(b)).toBeNull();
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import { parseFrameSpec, type FrameSpec } from '../calibrate/patterns';
+import { isValidState, type GeneratorState } from '../generator/shuffle';
 import { parseSurfaceList } from '../surfaces/parse';
 import type { Surface } from '../surfaces/types';
 
@@ -9,6 +10,7 @@ export type Msg =
   | { type: 'surfaces'; surfaces: Surface[] } // editor -> output: the whole face list
   | { type: 'layout'; surfaces: Surface[] } // simulator -> editor: "use this face layout"
   | { type: 'pattern'; on: boolean } // editor -> others: show the test pattern even when a video is loaded
+  | { type: 'generator'; state: GeneratorState } // editor -> output: random-visuals generator state
   | { type: 'video'; blob: Blob } // editor -> output (structured-clone copy)
   | { type: 'probe' } // editor -> output: "tell me your size"
   | { type: 'output-size'; w: number; h: number; fullscreen: boolean } // output -> editor
@@ -30,6 +32,20 @@ export function parseMsg(data: unknown): Msg | null {
     }
     case 'pattern':
       return typeof d.on === 'boolean' ? { type: 'pattern', on: d.on } : null;
+    case 'generator': {
+      const s = d.state;
+      if (!isValidState(s)) return null;
+      const state: GeneratorState = {
+        on: s.on,
+        look: { style: s.look.style, seed: s.look.seed },
+        prev: s.prev === null ? null : { style: s.prev.style, seed: s.prev.seed },
+        changedAt: s.changedAt,
+        shuffleSec: s.shuffleSec,
+        startedAt: s.startedAt,
+        stylePick: s.stylePick,
+      };
+      return { type: 'generator', state };
+    }
     case 'video':
       return d.blob instanceof Blob ? { type: 'video', blob: d.blob } : null;
     case 'probe':
