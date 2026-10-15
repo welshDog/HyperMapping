@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FRAGMENT_SRC, lookUniforms, seedToUniform, VERTEX_SRC } from './shaders';
+import { FRAGMENT_SRC, GLOBAL_UNIFORMS, LOOK_UNIFORMS, lookUniforms, seedToUniform, VERTEX_SRC } from './shaders';
 import { LOOK_STYLES, paletteFor, speedFor } from './look';
 
 describe('seedToUniform', () => {
@@ -21,7 +21,35 @@ describe('seedToUniform', () => {
   });
 });
 
+// Exact inverse of the mixing step inside seedToUniform (before the >>> 8 fold), so the test can
+// build two 32-bit seeds that fold to the same shader seed.
+function modInverse32(c: number): number {
+  let inv = c;
+  for (let i = 0; i < 5; i++) inv = Math.imul(inv, 2 - Math.imul(c, inv));
+  return inv >>> 0;
+}
+function unmix(y: number): number {
+  let x = (y ^ (y >>> 16)) >>> 0;
+  x = Math.imul(x, modInverse32(0x846ca68b)) >>> 0;
+  x = (x ^ (x >>> 15) ^ (x >>> 30)) >>> 0;
+  x = Math.imul(x, modInverse32(0x7feb352d)) >>> 0;
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
 describe('lookUniforms', () => {
+  it('still gives different palettes for two seeds that fold to the same shader seed', () => {
+    const mixed = 0x5eed1200;
+    const s1 = unmix(mixed);
+    const s2 = unmix(mixed ^ 0x7f); // differs only in the 8 bits the fold drops
+    expect(s1).not.toBe(s2);
+    expect(seedToUniform(s1)).toBe(seedToUniform(s2));
+    const u1 = lookUniforms({ style: 'plasma', seed: s1 });
+    const u2 = lookUniforms({ style: 'plasma', seed: s2 });
+    expect(u1.seed).toBe(u2.seed);
+    expect([u1.a, u1.b, u1.c, u1.d]).not.toEqual([u2.a, u2.b, u2.c, u2.d]);
+    expect(u1.speed).not.toBe(u2.speed);
+  });
+
   it('maps the style to its LOOK_STYLES index and copies palette and speed', () => {
     LOOK_STYLES.forEach((style, i) => {
       const u = lookUniforms({ style, seed: 42 });
@@ -37,13 +65,25 @@ describe('shader sources', () => {
   it('are GLSL ES 3.00 and declare every uniform the source sets', () => {
     expect(VERTEX_SRC.startsWith('#version 300 es')).toBe(true);
     expect(FRAGMENT_SRC.startsWith('#version 300 es')).toBe(true);
-    for (const name of ['u_res', 'u_time', 'u_fade', 'u_pulse', 'u_style', 'u_seed', 'u_speed', 'u_pa', 'u_pb', 'u_pc', 'u_pd']) {
+    for (const name of [...GLOBAL_UNIFORMS, ...LOOK_UNIFORMS]) {
       expect(FRAGMENT_SRC).toMatch(new RegExp(`uniform [a-z0-9]+ ${name}[[;]`));
     }
   });
 
   it('uses u_pulse in the body, not just the declaration', () => {
     expect(FRAGMENT_SRC.split('u_pulse').length - 1).toBeGreaterThan(1);
+  });
+
+  it('reads time only through u_time (no other clock or randomness)', () => {
+    for (const src of [VERTEX_SRC, FRAGMENT_SRC]) {
+      const rest = src.replace(/\bu_time\b/g, '');
+      expect(rest).not.toMatch(/time|clock|date|random|gl_FragCoord/i);
+    }
+  });
+
+  it('caps fbm by u_octaves', () => {
+    expect(FRAGMENT_SRC).toMatch(/uniform int u_octaves;/);
+    expect(FRAGMENT_SRC).toMatch(/if \(i >= u_octaves\) break;/);
   });
 
   it('only evaluates the previous look while fading', () => {
