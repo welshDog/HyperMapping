@@ -18,19 +18,28 @@ function lanAddresses(): string[] {
 
 function readBody(req: IncomingMessage): Promise<string | null> {
   return new Promise((resolve) => {
+    const declared = Number(req.headers['content-length'] ?? '0');
+    if (Number.isFinite(declared) && declared > MAX_BODY_CHARS) {
+      resolve(null);
+      return;
+    }
     let body = '';
-    let tooBig = false;
+    let done = false;
+    const finish = (value: string | null) => {
+      if (done) return;
+      done = true;
+      resolve(value);
+    };
     req.setEncoding('utf8');
     req.on('data', (chunk: string) => {
-      if (tooBig) return;
+      if (done) return;
       body += chunk;
-      if (body.length > MAX_BODY_CHARS) {
-        tooBig = true;
-        body = '';
-      }
+      if (body.length > MAX_BODY_CHARS) finish(null);
     });
-    req.on('end', () => resolve(tooBig ? null : body));
-    req.on('error', () => resolve(null));
+    req.on('end', () => finish(body));
+    req.on('error', () => finish(null));
+    req.on('aborted', () => finish(null));
+    req.on('close', () => finish(null));
   });
 }
 
@@ -52,8 +61,13 @@ export function calibrationRelay(): Plugin {
       const method = req.method ?? 'GET';
       void (async () => {
         const body = method === 'POST' ? await readBody(req) : '';
-        if (body === null) return send(res, 413, { error: 'too big' });
-        const run = () => handleCalibRequest(mailbox, { method, url, body }, lanAddresses());
+        if (body === null) {
+          res.once('finish', () => req.destroy());
+          send(res, 413, { error: 'too big' });
+          return;
+        }
+        const lan = new URL(url, 'http://relay.invalid').pathname === '/calib/info' ? lanAddresses() : [];
+        const run = () => handleCalibRequest(mailbox, { method, url, body }, lan);
         let r = run();
         if (method === 'GET' && r.status === 200 && Array.isArray((r.json as { messages?: unknown }).messages)) {
           // Long poll: wait for a message, up to 20 s, giving up if the client goes away.
@@ -67,7 +81,10 @@ export function calibrationRelay(): Plugin {
           if (closed) return;
         }
         send(res, r.status, r.json);
-      })();
+      })().catch(() => {
+        if (!res.headersSent) send(res, 500, { error: 'internal' });
+        else res.destroy();
+      });
     });
   };
   return {

@@ -27,7 +27,8 @@ const isBox = (b: unknown): b is Box => b === 'to-phone' || b === 'to-laptop';
 /** An in-memory message mailbox for one laptop and one phone, with hard caps. */
 export function createMailbox(clock: () => number = Date.now): Mailbox {
   const sessions = new Map<string, Session>();
-  let counter = 0;
+  // Seeded from the clock so sequence numbers keep rising across a server restart.
+  let counter = clock();
 
   const sweep = () => {
     const now = clock();

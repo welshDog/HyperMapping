@@ -78,4 +78,11 @@ describe('mailbox', () => {
     now = 20 * 60 * 1000;
     expect(mb.after(S1, 'to-phone', 0).length).toBe(1);
   });
+  it('issues larger sequence numbers after a restart (later clock)', () => {
+    const first = createMailbox(() => 1000);
+    const second = createMailbox(() => 2000);
+    first.post(S1, 'to-phone', 'x');
+    second.post(S1, 'to-phone', 'x');
+    expect(second.after(S1, 'to-phone', 0)[0].seq).toBeGreaterThan(first.after(S1, 'to-phone', 0)[0].seq);
+  });
 });
