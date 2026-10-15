@@ -201,9 +201,13 @@ vec3 lookNeon(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3
     vec2 gd = abs(fract(g) - 0.5);
     float line = max(smoothstep(0.5 - w.x * 1.5, 0.5, gd.x), smoothstep(0.5 - w.y * 1.5, 0.5, gd.y));
     float gfog = exp(-gz * 0.18) * smoothstep(0.0, 0.05, h);
-    // treble: grid lines flicker, each row on its own beat-free shimmer
-    float flick = hash1u(uint(int(floor(g.y))) * 747796405u ^ uint(int(floor(t * 24.0))) ^ s);
-    col += pal(0.15 + gz * 0.03, a, b, c, d) * line * gfog * 1.3 * (1.0 + u_treble * (0.4 + 2.2 * flick));
+    float gridGain = 1.3;
+    if (u_treble > 0.0) {
+      // treble: grid lines flicker, each row on its own shimmer
+      float flick = hash1u(uint(int(floor(g.y))) * 747796405u ^ uint(int(floor(t * 24.0))) ^ s);
+      gridGain *= 1.0 + u_treble * (0.4 + 2.2 * flick);
+    }
+    col += pal(0.15 + gz * 0.03, a, b, c, d) * line * gfog * gridGain;
   }
   // horizon haze
   col += pal(0.4, a, b, c, d) * exp(-abs(p.y - horizon) * 18.0) * 0.35;

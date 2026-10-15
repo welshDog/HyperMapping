@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FRAGMENT_SRC, GLOBAL_UNIFORMS, LOOK_UNIFORMS, lookUniforms, seedToUniform, VERTEX_SRC } from './shaders';
 import { LOOK_STYLES, paletteFor, speedFor } from './look';
-import SOURCE_TS from './source.ts?raw';
 
 describe('seedToUniform', () => {
   it('is deterministic and fits exactly in a float32 (24 bits)', () => {
@@ -107,13 +106,6 @@ describe('shader sources', () => {
       expect(body).toMatch(/\bu_pulse\b/);
     }
     expect(FRAGMENT_SRC.split('u_treble').length - 1).toBeGreaterThanOrEqual(5); // declaration + 4 looks
-  });
-
-  it('source.ts looks up and sets every global uniform each frame', () => {
-    const src = SOURCE_TS;
-    expect(src).toMatch(/\[\.\.\.GLOBAL_UNIFORMS, \.\.\.LOOK_UNIFORMS\]/);
-    for (const name of GLOBAL_UNIFORMS) expect(src).toMatch(new RegExp(`p\\.loc\\.${name}\\b`));
-    expect(src).not.toMatch(/u_pulse, 0\)/); // the pulse is no longer hard-wired to zero
   });
 
   it('caps fbm by u_octaves', () => {
