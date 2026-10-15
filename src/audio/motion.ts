@@ -7,6 +7,7 @@ type Levels = { bass: number; treble: number; vol: number };
 
 /** Fade stale levels out linearly between STALE_START_MS and STALE_END_MS of age. */
 export function fadeLevels(l: Levels, ageMs: number): Levels {
+  if (Number.isNaN(ageMs)) return { bass: 0, treble: 0, vol: 0 };
   if (!(ageMs > STALE_START_MS)) return { ...l };
   const f = Math.max(0, 1 - (ageMs - STALE_START_MS) / (STALE_END_MS - STALE_START_MS));
   return { bass: l.bass * f, treble: l.treble * f, vol: l.vol * f };

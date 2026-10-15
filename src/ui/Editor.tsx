@@ -143,7 +143,7 @@ export function Editor() {
 
   // The microphone engine. Called BEFORE the channel effect so its unmount cleanup (final zero message)
   // runs while the channel is still open.
-  const audio = useAudioReactor({ channelRef, genStateRef, updateGenerator });
+  const audio = useAudioReactor({ channelRef, genStateRef, genSourceRef, updateGenerator });
 
   // The generator source lives as long as the renderer; it only draws while the generator is on.
   useEffect(() => {

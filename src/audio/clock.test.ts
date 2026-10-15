@@ -62,6 +62,23 @@ describe('createAudioClock', () => {
     expect(c.frame(60_033).atime).toBeGreaterThan(kept); // then it continues
   });
 
+  it('scales the loudness time by the Speed (1 identical, 0.5 half, 2 double)', () => {
+    const run = (speed: number | undefined) => {
+      const c = createAudioClock();
+      c.frame(0, speed);
+      let a = 0;
+      for (let i = 1; i <= 60; i++) {
+        c.setAudio({ bass: 0, treble: 0, vol: 1 }, i * 33 - 5);
+        a = c.frame(i * 33, speed).atime;
+      }
+      return a;
+    };
+    const one = run(1);
+    expect(run(undefined)).toBe(one);
+    expect(run(0.5)).toBeCloseTo(one * 0.5, 9);
+    expect(run(2)).toBeCloseTo(one * 2, 9);
+  });
+
   it('clamps out-of-range levels and cleans NaN/Infinity', () => {
     const c = createAudioClock();
     c.setAudio({ bass: 5, treble: -2, vol: Number.NaN }, 0);

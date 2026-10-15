@@ -6,6 +6,7 @@ import { createLevelThrottle, scaleBySensitivity, shouldBeatRandomize } from '..
 import { loadAudioSettings, masked, parseAudioSettings, saveAudioSettings, type AudioSettings } from '../audio/settings';
 import { createLevelTracker } from '../audio/tracker';
 import { randomizeState, type GeneratorState } from '../generator/shuffle';
+import type { GeneratorSource } from '../generator/source';
 import { getBrowserStore } from '../setups/browser-store';
 
 export type AudioStatus = 'off' | 'listening' | 'denied' | 'no-mic' | 'unsupported';
@@ -20,6 +21,8 @@ const ZERO: MeterLevels = { bass: 0, treble: 0, volume: 0 };
 interface Args {
   channelRef: MutableRefObject<BroadcastChannel | null>;
   genStateRef: MutableRefObject<GeneratorState>;
+  /** The Editor's own generator picture: a channel never delivers to its sender, so it is fed directly. */
+  genSourceRef: MutableRefObject<GeneratorSource | null>;
   updateGenerator: (next: GeneratorState) => void;
 }
 
@@ -29,7 +32,7 @@ interface Args {
  * callback reads lives in refs, never in React state. No unit tests for this file (DOM / React, Node test
  * env); the pure decisions it uses are tested in audio/reactor-logic.test.ts.
  */
-export function useAudioReactor({ channelRef, genStateRef, updateGenerator }: Args) {
+export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateGenerator }: Args) {
   const [store] = useState(() => getBrowserStore());
   const [settings, setSettingsState] = useState<AudioSettings>(() => loadAudioSettings(store));
   const [status, setStatus] = useState<AudioStatus>('off');
@@ -48,9 +51,15 @@ export function useAudioReactor({ channelRef, genStateRef, updateGenerator }: Ar
   const detectorRef = useRef(createBeatDetector());
   const throttleRef = useRef(createLevelThrottle());
 
-  const postZeros = useCallback(() => {
-    channelRef.current?.postMessage({ type: 'audio', bass: 0, treble: 0, vol: 0 });
-  }, [channelRef]);
+  /** The one place levels go out: the Output window(s) over the channel and the Editor's own picture. */
+  const sendLevels = useCallback(
+    (bass: number, treble: number, vol: number) => {
+      channelRef.current?.postMessage({ type: 'audio', bass, treble, vol });
+      genSourceRef.current?.setAudio({ bass, treble, vol });
+    },
+    [channelRef, genSourceRef],
+  );
+  const postZeros = useCallback(() => sendLevels(0, 0, 0), [sendLevels]);
 
   /** Everything that must happen when listening ends, whatever ended it. */
   const settleOff = useCallback(
@@ -78,7 +87,7 @@ export function useAudioReactor({ channelRef, genStateRef, updateGenerator }: Ar
       const beat = detectorRef.current.update(base.bass, now); // beats are judged on the unscaled bass
       const scaled = scaleBySensitivity(base, s.sensitivity);
       const m = masked(scaled, s);
-      channelRef.current?.postMessage({ type: 'audio', bass: m.bass, treble: m.treble, vol: m.vol });
+      sendLevels(m.bass, m.treble, m.vol);
       if (throttleRef.current.due(now)) {
         setLevels({ bass: scaled.bass, treble: scaled.treble, volume: scaled.volume });
       }
@@ -87,7 +96,7 @@ export function useAudioReactor({ channelRef, genStateRef, updateGenerator }: Ar
         updateGeneratorRef.current(randomizeState(gen, now, Math.random));
       }
     },
-    [channelRef, genStateRef],
+    [sendLevels, genStateRef],
   );
 
   const stop = useCallback(() => {

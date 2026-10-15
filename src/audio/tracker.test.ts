@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLevelTracker, type LevelTracker } from './tracker';
+import { GATE_CLOSE, GATE_OPEN, NOISE_GATE, createLevelTracker, type LevelTracker } from './tracker';
 
 const sig = (v: number) => ({ bass: v, mid: v, treble: v, volume: v });
 function run(t: LevelTracker, v: number, n: number, sens?: number) {
@@ -22,13 +22,26 @@ describe('createLevelTracker', () => {
     for (let i = 0; i < 50; i++) t.update({ bass: 0.9, mid: 0, treble: 0, volume: 0.02 });
     expect(run(t, 0.1, 60).bass).toBeGreaterThanOrEqual(0.9);
   });
-  it('rises faster than it falls', () => {
+  it('rises faster than it falls (equal-size steps)', () => {
+    // A constant input settles at target = sensitivity (peak = input). Steps of 0.5 up and down:
+    const down = createLevelTracker();
+    const high = run(down, 0.5, 200, 1).bass; // settled at 1
+    const fall = high - down.update(sig(0.5), 0.5).bass; // target 0.5
+    const up = createLevelTracker();
+    const low = run(up, 0.5, 200, 0.5).bass; // settled at 0.5
+    const rise = up.update(sig(0.5), 1).bass - low; // target 1
+    expect(rise).toBeGreaterThan(3 * fall);
+  });
+  it('gate has hysteresis: open above GATE_OPEN, close below GATE_CLOSE, hold in between', () => {
+    expect(NOISE_GATE).toBe(GATE_OPEN);
+    const mid = (GATE_OPEN + GATE_CLOSE) / 2;
+    const closed = createLevelTracker();
+    expect(run(closed, mid, 20).bass).toBe(0); // hovering between: stays closed
     const t = createLevelTracker();
-    run(t, 0.5, 100); // settled near 1
-    const settled = t.update(sig(0.5)).bass;
-    const fall = settled - t.update(sig(0.0801)).bass; // quiet but above the gate
-    const rise = createLevelTracker().update(sig(0.5)).bass - 0; // first frame up from 0
-    expect(rise).toBeGreaterThan(fall);
+    expect(run(t, GATE_OPEN + 0.01, 20).bass).toBeGreaterThan(0.5); // crossing opens
+    expect(run(t, mid, 20).bass).toBeGreaterThan(0.5); // hovering between: stays open, no flap
+    expect(run(t, GATE_CLOSE - 0.01, 60).bass).toBeLessThan(0.01); // falling under closes
+    expect(run(t, mid, 20).bass).toBeLessThan(0.01); // and stays closed
   });
   it('sensitivity scales up (capped at 1) and down', () => {
     const settle = (s: number) => {

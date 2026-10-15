@@ -4,6 +4,9 @@ import { STALE_END_MS, STALE_START_MS, VOLUME_SPEEDUP, fadeLevels, stepAudioTime
 const L = { bass: 0.8, treble: 0.4, vol: 0.6 };
 
 describe('fadeLevels', () => {
+  it('treats a NaN age as stale', () => {
+    expect(fadeLevels({ bass: 1, treble: 1, vol: 1 }, NaN)).toEqual({ bass: 0, treble: 0, vol: 0 });
+  });
   it('unchanged up to the stale start and for negative age', () => {
     for (const a of [0, 50, STALE_START_MS, -10]) expect(fadeLevels(L, a)).toEqual(L);
   });

@@ -189,7 +189,7 @@ export function createGeneratorSource(): GeneratorSource | null {
       const g = gl;
       const p = prog;
       if (!g || !p || lost || g.isContextLost()) return;
-      const sound = audioClock.frame(frameAt);
+      const sound = audioClock.frame(frameAt, s.speed);
       const now = Date.now();
       const { prev, cur, fade } = currentLook(s, now);
       const curU = lookUniforms(cur);

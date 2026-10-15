@@ -12,9 +12,9 @@ export interface AudioClock {
   setAudio(levels: AudioLevels, nowMs: number): void;
   /**
    * Advance one drawn frame: stale levels fade out (fadeLevels), loudness time advances by the gap
-   * since the previous frame call (clamped by stepAudioTime). Zeros before any audio arrives.
+   * since the previous frame call (clamped by stepAudioTime), scaled by the user's Speed (default 1). Zeros before any audio arrives.
    */
-  frame(nowMs: number): AudioFrame;
+  frame(nowMs: number, speed?: number): AudioFrame;
   /** Forget the last frame time (drawing paused): the next frame adds no time. atime is kept. */
   idle(): void;
 }
@@ -31,11 +31,14 @@ export function createAudioClock(): AudioClock {
       levels = { bass: clean(next.bass), treble: clean(next.treble), vol: clean(next.vol) };
       levelsAt = nowMs;
     },
-    frame(nowMs) {
+    frame(nowMs, speed = 1) {
       const lv = fadeLevels(levels, nowMs - levelsAt);
       const dt = lastFrameAt === null ? 0 : (nowMs - lastFrameAt) / 1000;
       lastFrameAt = nowMs;
-      motion = stepAudioTime(motion, lv.vol, dt);
+      const k = Number.isFinite(speed) && speed > 0 ? speed : 1;
+      const stepped = stepAudioTime(motion, lv.vol, dt);
+      // Only the time increment is scaled by Speed; the loudness smoothing keeps its real-time rate.
+      motion = { smooth: stepped.smooth, atime: motion.atime + (stepped.atime - motion.atime) * k };
       return { pulse: lv.bass, treble: lv.treble, atime: motion.atime };
     },
     idle() {

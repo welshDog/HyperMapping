@@ -2,7 +2,10 @@ import type { Bands } from './bands';
 
 export const PEAK_DECAY = 0.995;
 export const PEAK_FLOOR = 0.08;
-export const NOISE_GATE = 0.04;
+/** The gate opens when raw volume rises above GATE_OPEN and closes when it falls below GATE_CLOSE (hysteresis). */
+export const GATE_OPEN = 0.05;
+export const GATE_CLOSE = 0.03;
+export const NOISE_GATE = GATE_OPEN;
 export const ATTACK = 0.6;
 export const RELEASE = 0.12;
 
@@ -24,10 +27,14 @@ function clamp01(x: number): number {
 export function createLevelTracker(): LevelTracker {
   const peak: Bands = { bass: 0, mid: 0, treble: 0, volume: 0 };
   const smooth: Bands = { bass: 0, mid: 0, treble: 0, volume: 0 };
+  let open = false;
   return {
     update(raw, sensitivity = 1) {
       const sens = Number.isFinite(sensitivity) && sensitivity > 0 ? sensitivity : 1;
-      const gated = clean(raw.volume) < NOISE_GATE;
+      const vol = clean(raw.volume);
+      if (vol > GATE_OPEN) open = true;
+      else if (vol < GATE_CLOSE) open = false;
+      const gated = !open;
       for (const k of KEYS) {
         const r = clean(raw[k]);
         let target = 0;
@@ -41,6 +48,7 @@ export function createLevelTracker(): LevelTracker {
       return { ...smooth };
     },
     reset() {
+      open = false;
       for (const k of KEYS) {
         peak[k] = 0;
         smooth[k] = 0;
