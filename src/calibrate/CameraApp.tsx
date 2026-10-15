@@ -106,8 +106,12 @@ export function CameraApp() {
       if (lit / map.mask.length < MIN_LIT_SHARE) {
         return fail('dark', undefined, 'The projector picture was not seen. Aim at the box and dim the room.');
       }
-      scanRef.current = null;
+      // Keep the scan marked as running until the result is on its way: a Stop that arrives while it is
+      // being sent then cancels it (scanRef is cleared) instead of being ignored, and a newer scan that
+      // started meanwhile is not overwritten by a late "Done".
       const sent = await sendChecked({ type: 'scan-result', map, preview: scan.preview });
+      if (scanRef.current !== scan) return;
+      scanRef.current = null;
       if (!sent) return fail('other', 'result too large or server refused it', 'Could not send the scan to the laptop. Try again.');
       setStage('done');
       setStatus('Done. Tap the box corners on the laptop.');
