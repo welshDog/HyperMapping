@@ -4,6 +4,7 @@ import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { randomizeState, shuffleDue, type GeneratorState } from '../generator/shuffle';
 import { createGeneratorSource, type GeneratorSource } from '../generator/source';
 import { CHANNEL, parseMsg } from '../output/protocol';
+import { DEMO_FILE_NAME, demoVideoUrl } from '../sources/demo';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
@@ -342,10 +343,9 @@ export function Editor() {
     });
   })();
 
-  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || !renderer) return;
+  /** Show a video on the faces and send it to the Output window: shared by the file picker and the demo button. */
+  const loadVideoBlob = async (file: Blob) => {
+    if (!renderer) return;
     try {
       const handle = await createVideoFromBlob(file);
       videoRef.current?.dispose();
@@ -363,6 +363,31 @@ export function Editor() {
       }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not load that video');
+    }
+  };
+
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    await loadVideoBlob(file);
+  };
+
+  const [demoLoading, setDemoLoading] = useState(false);
+  /** Fetch the bundled demo video and load it exactly like a picked file. */
+  const loadDemo = async () => {
+    if (!renderer || demoLoading) return;
+    setDemoLoading(true);
+    setNotice('Loading the demo video…');
+    try {
+      const res = await fetch(demoVideoUrl(import.meta.env.BASE_URL));
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      const blob = await res.blob();
+      await loadVideoBlob(new File([blob], DEMO_FILE_NAME, { type: 'video/mp4' }));
+    } catch (err) {
+      setNotice(`Could not load the demo video${err instanceof Error ? ` (${err.message})` : ''}.`);
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -449,6 +474,13 @@ export function Editor() {
             Load video
             <input type="file" accept="video/*" className="hidden" disabled={!renderer} onChange={onFile} />
           </label>
+          <button
+            className={`rounded-lg px-4 py-3 font-medium ${renderer && !demoLoading ? 'bg-zinc-700' : 'bg-zinc-800 text-zinc-500'}`}
+            disabled={!renderer || demoLoading}
+            onClick={() => void loadDemo()}
+          >
+            {demoLoading ? 'Loading…' : 'Demo video'}
+          </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={enterPlay}>
             Play mode
           </button>
