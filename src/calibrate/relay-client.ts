@@ -21,11 +21,24 @@ export function createRelayClient(session: string, role: 'laptop' | 'phone', fet
         const res = await fetchFn(`/calib/${session}/${mine}?after=${last}`, { signal: controller.signal, cache: 'no-store' });
         if (!res.ok) throw new Error(String(res.status));
         const data = (await res.json()) as { messages?: { seq: number; body: string }[] };
-        for (const m of data.messages ?? []) {
+        const msgs = data.messages ?? [];
+        let fresh = 0;
+        for (const m of msgs) {
           if (typeof m.seq === 'number' && m.seq > last) {
             last = m.seq;
-            handler?.(m.body);
+            fresh++;
+            try {
+              handler?.(m.body);
+            } catch {
+              // one failing handler must not stall the rest of the batch
+            }
           }
+        }
+        if (fresh === 0) {
+          // A server whose sequence numbers went backwards: start again from the beginning.
+          if (msgs.length > 0 && msgs.every((m) => typeof m.seq === 'number' && m.seq <= last)) last = 0;
+          // Never spin on a server that answers instantly with nothing new.
+          await new Promise((resolve) => setTimeout(resolve, 250));
         }
       } catch {
         if (closed) return;
