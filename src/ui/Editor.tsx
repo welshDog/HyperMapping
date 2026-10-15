@@ -289,6 +289,29 @@ export function Editor() {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   };
 
+  // In Play mode the Escape key also goes back to editing (the first Escape in fullscreen only leaves
+  // fullscreen; the next one reaches the page), and a short hint says how to get back.
+  const [playHint, setPlayHint] = useState(false);
+  useEffect(() => {
+    if (mode !== 'play') {
+      setPlayHint(false);
+      return;
+    }
+    setPlayHint(true);
+    const hintTimer = window.setTimeout(() => setPlayHint(false), 5000);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMode('edit');
+        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.clearTimeout(hintTimer);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mode]);
+
   const openOutput = () => {
     window.open(`${location.pathname}#output`, 'hypermapping-output', 'popup,width=960,height=540');
   };
@@ -374,11 +397,18 @@ export function Editor() {
           {notice && <span className="w-full text-xs text-amber-400">{notice}</span>}
         </div>
       ) : (
-        <button
-          aria-label="Exit play mode"
-          className="absolute left-0 top-0 z-20 h-16 w-16 opacity-0"
-          onClick={exitPlay}
-        />
+        <>
+          <button
+            aria-label="Exit play mode"
+            className="absolute left-0 top-0 z-20 h-16 w-16 opacity-0"
+            onClick={exitPlay}
+          />
+          {playHint && (
+            <p className="pointer-events-none absolute left-20 top-4 z-20 rounded-lg bg-black/70 px-3 py-2 text-sm text-white">
+              Click or tap the top-left corner, or press Esc, to go back to editing.
+            </p>
+          )}
+        </>
       )}
 
       {mode === 'edit' && sliceMode && (
