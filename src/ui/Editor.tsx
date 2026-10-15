@@ -438,6 +438,7 @@ export function Editor() {
           onApply={(list) => adoptLayoutRef.current(list)}
           onClose={() => setCalibrateOpen(false)}
           onOpenOutput={openOutput}
+          store={store}
         />
       )}
     </div>

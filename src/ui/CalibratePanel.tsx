@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { applyCalibration, tapToCamera, tapsToCorners } from '../calibrate/corners';
 import type { ScanMap } from '../calibrate/decode';
 import { buildCameraLink, newSessionId } from '../calibrate/link';
+import { calibrationSetupName } from '../calibrate/names';
 import { SETTLE_MS, STEP_PX, frameCount, frameSpec } from '../calibrate/patterns';
 import { encodeCalibMsg, parseCalibMsg, type CalibMsg } from '../calibrate/protocol';
 import { createRelayClient, type RelayClient } from '../calibrate/relay-client';
 import { createScanGate, type ScanGate } from '../calibrate/scan-gate';
 import { runScan } from '../calibrate/scan-driver';
 import { CHANNEL, parseMsg } from '../output/protocol';
+import { MAX_SETUPS, normalizeName, saveSetup, type KeyValueStore } from '../setups/setups';
 import type { Surface } from '../surfaces/types';
 import type { Corners, Vec2 } from '../warp/types';
 import { QrCode } from './QrCode';
@@ -18,7 +20,16 @@ interface Props {
   onClose: () => void;
   /** Opens the Output window (the Editor toolbar is hidden behind this panel). */
   onOpenOutput: () => void;
+  /** Browser storage for saved setups, or null when it is blocked (private window). */
+  store: KeyValueStore | null;
 }
+
+const SAVE_ERRORS = {
+  'bad-name': 'Give the setup a name (1 to 40 characters).',
+  'bad-surfaces': 'This result cannot be saved.',
+  full: `You already have ${MAX_SETUPS} setups: delete one in Setups first.`,
+  storage: "Saving isn't available in this browser mode.",
+} as const;
 
 type Stage = 'connect' | 'scanning' | 'decoding' | 'tap';
 interface ActiveScan {
@@ -32,7 +43,7 @@ const CORNER_NAMES = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
 const btn = 'rounded-lg px-4 py-3 font-medium disabled:opacity-40';
 
 /** Pair a phone, run the scan, tap the corners, and apply the result. A modal panel over the Editor. */
-export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput }: Props) {
+export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput, store }: Props) {
   const session = useMemo(() => newSessionId(), []);
   const [addresses, setAddresses] = useState<string[] | null>(null);
   const [phone, setPhone] = useState<{ width: number; height: number } | null>(null);
@@ -45,6 +56,8 @@ export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput }: Pro
   const [faceIndex, setFaceIndex] = useState(0);
   const [taps, setTaps] = useState<Vec2[]>([]);
   const [solved, setSolved] = useState<Record<string, Corners>>({});
+  const [saveName, setSaveName] = useState(() => calibrationSetupName(new Date()));
+  const [saveStatus, setSaveStatus] = useState<{ text: string; error: boolean } | null>(null);
 
   const relayRef = useRef<RelayClient | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
@@ -316,6 +329,17 @@ export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput }: Pro
     onClose();
   };
 
+  /** Store the layout as it would look after Apply as a named setup; the current pins are not touched. */
+  const saveResult = () => {
+    if (!store) return;
+    const result = saveSetup(store, saveName, applyCalibration(surfaces, solved), Date.now());
+    if (!result.ok) {
+      setSaveStatus({ text: SAVE_ERRORS[result.reason], error: true });
+      return;
+    }
+    setSaveStatus({ text: `${result.replaced ? 'Replaced' : 'Saved'} "${normalizeName(saveName)}". Find it under Setups.`, error: false });
+  };
+
   const solvedCount = Object.keys(solved).length;
   const hasFace = faceIndex < faceIds.length;
 
@@ -444,7 +468,32 @@ export function CalibratePanel({ surfaces, onApply, onClose, onOpenOutput }: Pro
                 Apply ({solvedCount} {solvedCount === 1 ? 'face' : 'faces'})
               </button>
             </div>
-            <p className="text-xs text-zinc-400">Apply replaces the corners of the faces you tapped. Save a setup first if you want to keep the old pins.</p>
+            {solvedCount > 0 && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    className="min-w-0 flex-1 select-text rounded-lg bg-zinc-800 px-3 py-2 text-base text-white"
+                    placeholder="Setup name"
+                    maxLength={40}
+                    value={saveName}
+                    onChange={(e) => setSaveName(e.target.value)}
+                  />
+                  <button
+                    className={`${btn} ${store ? 'bg-zinc-700' : 'bg-zinc-800 text-zinc-500'}`}
+                    disabled={!store}
+                    title={store ? undefined : "Saving isn't available in this browser mode"}
+                    onClick={saveResult}
+                  >
+                    Save result as setup
+                  </button>
+                </div>
+                {saveStatus && <p className={saveStatus.error ? 'text-amber-300' : 'text-emerald-300'}>{saveStatus.text}</p>}
+              </div>
+            )}
+            <p className="text-xs text-zinc-400">
+              Apply replaces the corners of the faces you tapped. Save result as setup keeps the new pins in Setups without changing your current
+              ones. Save a setup first if you also want to keep the old pins.
+            </p>
           </div>
         )}
       </div>
