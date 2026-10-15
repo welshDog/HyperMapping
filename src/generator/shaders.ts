@@ -25,6 +25,7 @@ uniform vec2 u_res;
 uniform float u_time;
 uniform float u_fade;
 uniform float u_pulse;
+uniform int u_octaves; // 5 normally, 3 in cheap mode (phones)
 uniform int u_style[2];
 uniform float u_seed[2];
 uniform float u_speed[2];
@@ -68,12 +69,13 @@ float gnoise(vec2 p, uint s) {
   return mix(mix(n0, n1, u.x), mix(n2, n3, u.x), u.y); // about -0.7..0.7
 }
 
-// 5 octaves, rotated each octave; returns roughly 0..1
+// up to 5 octaves (u_octaves), rotated each octave; returns roughly 0..1
 float fbm(vec2 p, uint s) {
   const mat2 R = mat2(0.8, 0.6, -0.6, 0.8);
   float v = 0.0;
   float amp = 0.5;
   for (int i = 0; i < 5; i++) {
+    if (i >= u_octaves) break;
     v += amp * gnoise(p, s + uint(i));
     p = R * p * 2.03 + vec2(17.1, 9.3);
     amp *= 0.5;
@@ -172,14 +174,15 @@ vec3 lookNeon(vec2 p, float t, uint s, float pulse, vec3 a, vec3 b, vec3 c, vec3
     col += pal(0.7 + t * 0.02, a, b, c, d) * exp(-sp * 260.0) * 0.5 * fog;
   }
   // perspective grid floor
+  // g and fwidth(g) are computed for every pixel (derivatives need uniform control flow);
+  // only the result is masked to below the horizon.
   float horizon = -0.12;
+  float h = max(horizon - p.y, 1e-3);
+  float gz = 0.3 / h;
+  vec2 g = vec2(p.x * gz * 1.4, gz + t * 1.6);
+  vec2 w = fwidth(g) * 1.2 + 0.015;
   if (p.y < horizon) {
-    float h = horizon - p.y;
-    float gz = 0.3 / h;
-    float gx = p.x * gz;
-    vec2 g = vec2(gx * 1.4, gz + t * 1.6);
     vec2 gd = abs(fract(g) - 0.5);
-    vec2 w = fwidth(g) * 1.2 + 0.015;
     float line = max(smoothstep(0.5 - w.x * 1.5, 0.5, gd.x), smoothstep(0.5 - w.y * 1.5, 0.5, gd.y));
     float gfog = exp(-gz * 0.18) * smoothstep(0.0, 0.05, h);
     col += pal(0.15 + gz * 0.03, a, b, c, d) * line * gfog * 1.3;
@@ -271,6 +274,16 @@ void main() {
   outColor = vec4(col, 1.0);
 }
 `;
+
+/** Uniforms set once per frame, shared by both looks. */
+export const GLOBAL_UNIFORMS = ['u_res', 'u_time', 'u_fade', 'u_pulse', 'u_octaves'] as const;
+/** Per-look uniform arrays: index 0 = current look, index 1 = previous look. */
+export const LOOK_UNIFORMS = ['u_style', 'u_seed', 'u_speed', 'u_pa', 'u_pb', 'u_pc', 'u_pd'] as const;
+export type UniformName = (typeof GLOBAL_UNIFORMS)[number] | (typeof LOOK_UNIFORMS)[number];
+
+/** fbm octave counts: full quality, and the cheap mode used on phones/tablets. */
+export const FULL_OCTAVES = 5;
+export const CHEAP_OCTAVES = 3;
 
 /** The uniform values for one look, ready to hand to WebGL. */
 export interface LookUniforms {

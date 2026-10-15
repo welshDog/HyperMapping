@@ -33,4 +33,20 @@ describe('sliceAspect', () => {
     expect(sliceAspect({ force: false, patternAvailable: true, video: { width: 0, height: 0 } })).toBeCloseTo(PATTERN);
     expect(sliceAspect({ force: false, patternAvailable: false, video: { width: 0, height: 720 } })).toBeCloseTo(PATTERN);
   });
+
+  it('uses 16:9 while the generator is on and available, even over a portrait video', () => {
+    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: true })).toBeCloseTo(PATTERN);
+  });
+
+  it('uses the video shape when the generator is on but unavailable', () => {
+    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: false })).toBeCloseTo(720 / 1280);
+  });
+
+  it('ignores the generator when it is off', () => {
+    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: false, generatorAvailable: true })).toBeCloseTo(720 / 1280);
+  });
+
+  it('lets the forced pattern beat the generator', () => {
+    expect(sliceAspect({ force: true, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: true })).toBeCloseTo(PATTERN);
+  });
 });

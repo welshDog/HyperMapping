@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { pickSource } from '../generator/select';
+import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
+import { randomizeState, shuffleDue, type GeneratorState } from '../generator/shuffle';
+import { createGeneratorSource, type GeneratorSource } from '../generator/source';
 import { CHANNEL, parseMsg } from '../output/protocol';
-import { createPatternSource, wantsPattern, type PatternSource } from '../sources/pattern';
+import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
@@ -41,7 +45,12 @@ export function Editor() {
   const [patternAvailable, setPatternAvailable] = useState(true); // false when the browser cannot make the pattern
   const [patternForce, setPatternForce] = useState(false); // show the pattern even when a video is loaded; not saved
   const patternForceRef = useRef(false); // read by the channel effect and applySource
-  const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
+  const genSourceRef = useRef<GeneratorSource | null>(null);
+  const [genAvailable, setGenAvailable] = useState(true); // false when the browser cannot make the generator
+  // The generator is always Off after a reload; only the look, shuffle and style choice are remembered.
+  const [genState, setGenState] = useState<GeneratorState>(() => loadGeneratorState(store, Date.now(), Math.random));
+  const genStateRef = useRef<GeneratorState>(genState); // read by the channel effect, the shuffle timer and applySource
+  const adoptLayoutRef =useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
   const [setupsOpen, setSetupsOpen] = useState(false);
@@ -92,14 +101,74 @@ export function Editor() {
     renderer?.setSurfaces(surfacesRef.current);
   }, [renderer]);
 
-  /** Give the renderer the test pattern or the video, whichever should be showing. */
+  /** Give the renderer the test pattern, the generator or the video, whichever should be showing. */
   const applySource = useCallback(() => {
     if (!renderer) return;
     const pattern = patternRef.current;
+    const generator = genSourceRef.current;
     const video = videoRef.current;
-    const source = wantsPattern(patternForceRef.current, video !== null) && pattern ? pattern.video : video ? video.video : null;
+    const kind = pickSource({
+      patternForce: patternForceRef.current,
+      generatorOn: genStateRef.current.on,
+      hasVideo: video !== null,
+      patternAvailable: pattern !== null,
+      generatorAvailable: generator !== null,
+    });
+    const source =
+      kind === 'pattern' && pattern
+        ? pattern.video
+        : kind === 'generator' && generator
+          ? generator.video
+          : kind === 'video' && video
+            ? video.video
+            : null;
     renderer.setVideo(source);
   }, [renderer]);
+
+  /** The single place a generator change goes out: ref, state, the output window, the source and the renderer. */
+  const updateGenerator = useCallback(
+    (next: GeneratorState) => {
+      genStateRef.current = next;
+      setGenState(next);
+      channelRef.current?.postMessage({ type: 'generator', state: next });
+      genSourceRef.current?.setState(next);
+      applySource();
+    },
+    [applySource],
+  );
+
+  // The generator source lives as long as the renderer; it only draws while the generator is on.
+  useEffect(() => {
+    if (!renderer) return;
+    const source = createGeneratorSource();
+    genSourceRef.current = source;
+    setGenAvailable(source !== null);
+    source?.setState(genStateRef.current);
+    if (source === null && genStateRef.current.on) {
+      updateGenerator({ ...genStateRef.current, on: false }); // unsupported: force off and tell the Output window
+    } else {
+      applySource();
+    }
+    return () => {
+      source?.dispose();
+      if (genSourceRef.current === source) genSourceRef.current = null;
+    };
+  }, [renderer, applySource, updateGenerator]);
+
+  // While the generator is on and a shuffle time is set, pick a new look when it is due.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const state = genStateRef.current;
+      const now = Date.now();
+      if (shuffleDue(state, now)) updateGenerator(randomizeState(state, now, Math.random));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [updateGenerator]);
+
+  // Remember the look, the shuffle choice and the style pick (never "on") for the next reload.
+  useEffect(() => {
+    if (store) saveGeneratorState(store, genState);
+  }, [store, genState]);
 
   // The test pattern source lives as long as the renderer; it is shown while there is no video.
   useEffect(() => {
@@ -134,6 +203,7 @@ export function Editor() {
     const v = videoRef.current?.video;
     if (v?.paused) v.play().catch(() => {});
     patternRef.current?.ensurePlaying();
+    genSourceRef.current?.ensurePlaying();
   }, []);
 
   useEffect(() => {
@@ -157,12 +227,14 @@ export function Editor() {
       // A new output window asked for everything we have.
       ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
       ch.postMessage({ type: 'pattern', on: patternForceRef.current });
+      ch.postMessage({ type: 'generator', state: genStateRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
     // An output window that was already open (e.g. this editor was reloaded) never sends
     // a new hello, so push our state once now.
     ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
     ch.postMessage({ type: 'pattern', on: patternForceRef.current });
+    ch.postMessage({ type: 'generator', state: genStateRef.current });
     if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
@@ -256,6 +328,8 @@ export function Editor() {
     return sliceAspect({
       force: patternForce,
       patternAvailable,
+      generatorOn: genState.on,
+      generatorAvailable: genAvailable,
       video: v ? { width: v.videoWidth, height: v.videoHeight } : null,
     });
   })();
