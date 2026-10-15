@@ -4,6 +4,7 @@ import { surfaceColor } from '../surfaces/model';
 import type { Surface } from '../surfaces/types';
 import { clampCorner } from '../warp/quad';
 import type { Vec2 } from '../warp/types';
+import { createPointerGate } from './pointer-gate';
 
 interface Props {
   surfacesRef: MutableRefObject<Surface[]>;
@@ -33,6 +34,8 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
   const dots = useRef<Record<string, SVGCircleElement | null>>({});
   const outlines = useRef<Record<string, SVGPolygonElement | null>>({});
   const dragging = useRef<CornerKey | null>(null);
+  // One drag at a time: the first finger down owns it; a second finger is ignored until it lifts.
+  const gate = useRef(createPointerGate());
 
   const paint = useCallback(() => {
     const svg = svgRef.current;
@@ -84,6 +87,7 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
 
   // A second finger changing the selection mid-drag must not leave a stale drag behind.
   useEffect(() => {
+    gate.current.reset();
     if (dragging.current !== null) {
       dragging.current = null;
       onPinDragEnd?.();
@@ -93,19 +97,23 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
 
   const onDown = (corner: CornerKey) => (e: PointerEvent<SVGCircleElement>) => {
     e.stopPropagation();
+    // A second finger while another is dragging does nothing (and never steals or ends the first drag).
+    if (!gate.current.down(e.pointerId)) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragging.current = corner;
     onPinDragStart?.();
   };
 
   const onMove = (corner: CornerKey) => (e: PointerEvent<SVGCircleElement>) => {
-    if (dragging.current !== corner || !svgRef.current) return;
+    if (!gate.current.owns(e.pointerId) || dragging.current !== corner || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const p = clampCorner([(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height]);
     if (onPinMove({ surfaceId: selectedId, corner }, p, { w: rect.width, h: rect.height })) paint();
   };
 
   const onUp = (e: PointerEvent<SVGCircleElement>) => {
+    // Only the finger that owns the drag can end it; any other finger lifting is ignored.
+    if (!gate.current.up(e.pointerId)) return;
     dragging.current = null;
     onPinDragEnd?.();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
