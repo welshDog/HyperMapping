@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildTopology, warpedPositions, unitToNdc, GRID, scaleUvs } from './mesh';
+import { buildTopology, warpedPositions, unitToNdc, GRID, scaleUvs, frameCoords } from './mesh';
+import { applyHomography, computeHomography } from './homography';
+import { UNIT_CORNERS, cornersToArray } from './types';
 import type { Corners } from './types';
 
 const SQUARE: Corners = { tl: [0, 0], tr: [1, 0], br: [1, 1], bl: [0, 1] };
@@ -83,5 +85,43 @@ describe('scaleUvs', () => {
     const t = buildTopology();
     const buf = new Float32Array(882);
     expect(scaleUvs(t.uvs, { u0: 0, v0: 0, u1: 0.5, v1: 1 }, buf)).toBe(buf);
+  });
+});
+
+describe('margin mesh', () => {
+  const SKEW: Corners = { tl: [0.1, 0.2], tr: [0.9, 0.1], br: [0.8, 0.9], bl: [0.2, 0.8] };
+  it('margin 0 equals the default output exactly', () => {
+    expect(Array.from(warpedPositions(SKEW, GRID, GRID, undefined, 0)!)).toEqual(Array.from(warpedPositions(SKEW)!));
+  });
+  it('a margin samples the frame from -m to 1+m through the same homography', () => {
+    const m = 0.02;
+    const out = warpedPositions(SKEW, GRID, GRID, undefined, m)!;
+    expect(out.length).toBe(441 * 2);
+    const h = computeHomography(cornersToArray(UNIT_CORNERS), cornersToArray(SKEW).map(unitToNdc))!;
+    const [ex, ey] = applyHomography(h, [-m, -m]);
+    expect(out[0]).toBeCloseTo(ex, 6);
+    expect(out[1]).toBeCloseTo(ey, 6);
+  });
+  it('buildTopology with a margin spreads the UVs over -m..1+m and keeps the indices', () => {
+    const t = buildTopology(GRID, GRID, 0.02);
+    expect(V(t.uvs, 0)[0]).toBeCloseTo(-0.02, 6);
+    expect(V(t.uvs, 0)[1]).toBeCloseTo(-0.02, 6);
+    expect(V(t.uvs, 440)[0]).toBeCloseTo(1.02, 6);
+    expect(t.indices).toEqual(buildTopology().indices);
+  });
+  it('frameCoords gives [fx, fy, shapeId] per vertex on the extended grid', () => {
+    const f = frameCoords(GRID, GRID, 0.02, 'circle');
+    expect(f.length).toBe(441 * 3);
+    expect(f[0]).toBeCloseTo(-0.02, 6);
+    expect(f[1]).toBeCloseTo(-0.02, 6);
+    expect(f[2]).toBe(2);
+    expect(f[440 * 3]).toBeCloseTo(1.02, 6);
+    expect(f[440 * 3 + 1]).toBeCloseTo(1.02, 6);
+    expect(f[440 * 3 + 2]).toBe(2);
+  });
+  it('frameCoords for a quad with no margin is the plain grid with shape id 0', () => {
+    const f = frameCoords(GRID, GRID, 0, 'quad');
+    expect(Array.from(f.slice(0, 3))).toEqual([0, 0, 0]);
+    expect(Array.from(f.slice(20 * 3, 20 * 3 + 3))).toEqual([1, 0, 0]);
   });
 });
