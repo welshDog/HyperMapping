@@ -1,5 +1,5 @@
 import type { Corners } from '../warp/types';
-import { FULL_RECT, MAX_SURFACES, MIN_SLICE, type SrcRect, type Surface } from './types';
+import { FACE_SHAPES, FULL_RECT, MAX_SURFACES, MIN_SLICE, type FaceShape, type SrcRect, type Surface } from './types';
 
 const EPS = 1e-9;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -44,14 +44,25 @@ function nextId(list: Surface[]): string {
  * Add a face (no-op at MAX_SURFACES). Faces still on their automatic slice are
  * re-balanced to the new count; slices the user customised are kept.
  */
-export function addSurface(list: Surface[]): Surface[] {
+export function addSurface(list: Surface[], shape: FaceShape = 'quad'): Surface[] {
   if (list.length >= MAX_SURFACES) return list;
   const oldN = list.length;
   const newN = oldN + 1;
   const oldDefaults = defaultSlices(oldN);
   const newDefaults = defaultSlices(newN);
   const rebalanced = list.map((s, i) => (rectsEqual(s.srcRect, oldDefaults[i]) ? { ...s, srcRect: newDefaults[i] } : s));
-  return [...rebalanced, { id: nextId(list), corners: defaultCorners(oldN, newN), srcRect: newDefaults[oldN] }];
+  const face: Surface = { id: nextId(list), corners: defaultCorners(oldN, newN), srcRect: newDefaults[oldN] };
+  if (shape !== 'quad') face.shape = shape;
+  return [...rebalanced, face];
+}
+
+/** Change one face's shape, keeping its id, pins and slice. Unknown ids and unchanged shapes return the same list. */
+export function setSurfaceShape(list: Surface[], id: string, shape: FaceShape): Surface[] {
+  const i = list.findIndex((s) => s.id === id);
+  if (i < 0 || (list[i].shape ?? 'quad') === shape) return list;
+  const { shape: _old, ...rest } = list[i];
+  const next: Surface = shape === 'quad' ? rest : { ...rest, shape };
+  return list.map((s, k) => (k === i ? next : s));
 }
 
 /** Remove a face. Never removes the last one; unknown ids are ignored. */
@@ -110,6 +121,7 @@ export function isValidSurfaces(list: Surface[]): boolean {
     if (typeof s.id !== 'string' || s.id.length < 1 || s.id.length > 32 || ids.has(s.id)) return false;
     ids.add(s.id);
     if (!isValidSrcRect(s.srcRect)) return false;
+    if (s.shape !== undefined && !FACE_SHAPES.includes(s.shape)) return false;
     const c = s.corners;
     if (!(isFiniteVec2(c.tl) && isFiniteVec2(c.tr) && isFiniteVec2(c.br) && isFiniteVec2(c.bl))) return false;
   }

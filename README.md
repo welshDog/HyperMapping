@@ -85,6 +85,13 @@ The visuals can react to music. In the Visuals panel, under **Sound**, press **L
 - Each window reacts to its own copy of the numbers, so the Editor, Output and simulator pictures are close but not pixel-identical while music drives the speed.
 - If the microphone is blocked, missing or busy, the panel says so and everything else keeps working.
 
+## Triangles and circles (face shapes)
+
+- **+ Face** now asks what shape to add: **Quad**, **Triangle** or **Circle**. Every face is still a four-handle frame; the shape is cut out of it. A circle is the ellipse inside the frame (it squashes into an ellipse when the wall is seen at an angle). A triangle has its point in the middle of the top edge and its base along the bottom edge (centred-point triangles only: equilateral, tall or flat, not lopsided or right-angled).
+- The **Shape** row under the face tabs changes the selected face's shape; its pins and slice stay as they are. The dashed outline is the frame you are dragging, the solid outline is the shape; the empty frame corners of a triangle or circle are not drawn on the wall.
+- The slice stays a rectangle of the video over the whole frame; the shape just hides part of it (**Edit slice** outlines the shape on the slice). The edge is smoothed, Glue, Setups and Export/Import all keep the shapes.
+- The simulator's box still solves to plain quads, and **Send to app** replaces the whole face list (so it replaces a shaped collage).
+
 ## Saving your setup
 
 - **Setups** (in the toolbar) opens the setups panel. Type a name and press **Save**: the layout of all your faces (pins and slices) is stored in this browser. **Load** brings one back, **Delete** removes one (tap twice). Saving under an existing name replaces it. You can keep up to 30.
@@ -102,7 +109,7 @@ The visuals can react to music. In the Visuals panel, under **Sound**, press **L
 
 ## Status
 
-Automated checks: the test suite (about 540 tests), the typecheck and the production build all pass.
+Automated checks: the test suite (about 580 tests), the typecheck and the production build all pass.
 
 Checked by hand by the author, on a laptop and a phone:
 
@@ -111,16 +118,18 @@ Checked by hand by the author, on a laptop and a phone:
 - Saved setups and the remembered last layout.
 - The test pattern, the demo video and the Visuals (laptop).
 - Camera calibration end to end: pairing the phone, the scan, tapping corners, Apply and Save result as setup.
+- Triangle and circle faces: pixel-checked in headless Chrome on the WebGL2 renderer (clean anti-aliased edges, quads unchanged). Not yet looked at by the author on a real browser or phone.
 
 Not checked on real hardware yet:
 
 - **How accurate calibration is on a real box with a real projector.** In tests with a simulated camera the recovered corners are within about 0.2 pixel; a real room, lens and projector will be less exact, so expect to nudge the pins.
 - **Sound reaction with a real microphone.** The microphone sensitivity numbers (noise floor, gate) are educated guesses; if the bars jump in a silent room, lower Sensitivity.
+- **Face shapes on the WebGPU renderer and on a phone.** The WebGPU shader mirrors the WebGL2 one but could not be run in the headless check (no WebGPU adapter there); add a triangle and a circle and look at the edges and at how easy the handles are to grab. `?renderer=webgl2` forces the checked path.
 - **The 20-minute thermal run** and the phone frame rate for Plasma and Kaleidoscope over a long session (phones use a cheaper version of those two looks).
 - iPhone-specific behaviour of the camera and microphone pages.
 
 ## Project layout and design documents
 
-- `src/renderer/`: the WebGPU and WebGL2 renderers (one shared interface). `src/warp/`: the perspective maths. `src/surfaces/`: faces, slices and glued corners. `src/sim/`: the 3D virtual projector. `src/setups/`: saving and loading. `src/calibrate/`: camera auto-calibration. `src/generator/`: the random visuals. `src/audio/`: sound reaction. `src/sources/`: video, the test pattern and the demo. `src/ui/`: the screens. `tools/`: the small server plugin that links the phone camera to the laptop.
+- `src/renderer/`: the WebGPU and WebGL2 renderers (one shared interface). `src/warp/`: the perspective maths. `src/surfaces/`: faces, shapes, slices and glued corners. `src/sim/`: the 3D virtual projector. `src/setups/`: saving and loading. `src/calibrate/`: camera auto-calibration. `src/generator/`: the random visuals. `src/audio/`: sound reaction. `src/sources/`: video, the test pattern and the demo. `src/ui/`: the screens. `tools/`: the small server plugin that links the phone camera to the laptop.
 - Every feature has a design spec and an implementation plan in `docs/superpowers/specs/` and `docs/superpowers/plans/` (the original idea trail is in `docs/notes/`).
 - `npm test` runs the tests; `npm run build` makes the production build.

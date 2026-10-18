@@ -163,3 +163,18 @@ describe('tapToCamera', () => {
     expect(tapToCamera(5, 5, { left: 0, top: 0, width: 0, height: 10 }, 640, 360)).toBeNull();
   });
 });
+
+describe('applyCalibration and shapes', () => {
+  it('keeps a face shape when its corners are replaced', () => {
+    const circle: Surface = {
+      id: 'c',
+      shape: 'circle',
+      corners: { tl: [0, 0], tr: [1, 0], br: [1, 1], bl: [0, 1] },
+      srcRect: { u0: 0, v0: 0, u1: 1, v1: 1 },
+    };
+    const fresh = { tl: [0.2, 0.2] as Vec2, tr: [0.8, 0.2] as Vec2, br: [0.8, 0.8] as Vec2, bl: [0.2, 0.8] as Vec2 };
+    const out = applyCalibration([circle], { c: fresh });
+    expect(out[0].shape).toBe('circle');
+    expect(out[0].corners).toEqual(fresh);
+  });
+});

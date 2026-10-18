@@ -9,28 +9,44 @@ const WGSL = /* wgsl */ `
 struct VSOut {
   @builtin(position) pos: vec4f,
   @location(0) uv: vec2f,
+  @location(1) frame: vec3f,
 };
 
 @vertex
-fn vs(@location(0) p: vec2f, @location(1) uv: vec2f) -> VSOut {
+fn vs(@location(0) p: vec2f, @location(1) uv: vec2f, @location(2) frame: vec3f) -> VSOut {
   var o: VSOut;
   o.pos = vec4f(p, 0.0, 1.0);
   o.uv = uv;
+  o.frame = frame;
   return o;
 }
 
 @group(0) @binding(0) var samp: sampler;
 @group(0) @binding(1) var tex: texture_external;
 
+// The shape maths mirrors shapeDistance() in src/warp/shape.ts and the GLSL in webgl2.ts: change all three together.
+// frame = (frameX, frameY, shape id); quads are id 0 and always fully covered. Coverage turns the signed distance
+// into a ~1 pixel anti-aliased edge; the output is premultiplied so it blends over the black clear colour.
+// No branches: derivatives must stay in uniform control flow.
 @fragment
 fn fs(in: VSOut) -> @location(0) vec4f {
-  return textureSampleBaseClampToEdge(tex, samp, in.uv);
+  let p = in.frame.xy;
+  let shape = i32(in.frame.z + 0.5);
+  let circle = length(p - vec2f(0.5)) - 0.5;
+  let inv = 0.8944271909999159; // 1 / sqrt(1.25)
+  let tri = max(max((-(p.x - 0.5) - 0.5 * p.y) * inv, ((p.x - 0.5) - 0.5 * p.y) * inv), p.y - 1.0);
+  let f = select(select(-1.0, tri, shape == 1), circle, shape == 2);
+  let w = max(length(vec2f(dpdx(f), dpdy(f))), 1e-6);
+  let cov = select(clamp(0.5 - f / w, 0.0, 1.0), 1.0, shape == 0);
+  let c = textureSampleBaseClampToEdge(tex, samp, in.uv);
+  return vec4f(c.rgb * cov, cov);
 }
 `;
 
 interface GpuSurface {
   posBuf: GPUBuffer;
   uvBuf: GPUBuffer;
+  frameBuf: GPUBuffer;
 }
 
 export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<Renderer> {
@@ -50,6 +66,7 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
   const format = navigator.gpu.getPreferredCanvasFormat(); // needs no canvas
   const topo = buildTopology();
   const surfaceBytes = topo.vertexCount * 2 * 4;
+  const frameBytes = topo.vertexCount * 3 * 4;
   let pipeline: GPURenderPipeline;
   let sampler: GPUSampler;
   let idxBuf: GPUBuffer;
@@ -69,9 +86,23 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
         buffers: [
           { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
           { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
+          { arrayStride: 12, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x3' }] },
         ],
       },
-      fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+      fragment: {
+        module,
+        entryPoint: 'fs',
+        // Premultiplied output over the black clear colour: shape edges fade out, quads (coverage 1) are unchanged.
+        targets: [
+          {
+            format,
+            blend: {
+              color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            },
+          },
+        ],
+      },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
     });
     sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
@@ -111,11 +142,17 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
       size: surfaceBytes,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     }),
+    frameBuf: device.createBuffer({
+      label: `face ${id} frame`,
+      size: frameBytes,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    }),
   });
 
   const freeSurface = (s: GpuSurface) => {
     s.posBuf.destroy();
     s.uvBuf.destroy();
+    s.frameBuf.destroy();
   };
 
   const setSurfaces = (list: Surface[]) => {
@@ -136,6 +173,11 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
       const g = surfaces.get(id);
       const b = sync.buffers(id);
       if (g && b) device.queue.writeBuffer(g.uvBuf, 0, b.uvs);
+    }
+    for (const id of r.changedFrames) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (g && b) device.queue.writeBuffer(g.frameBuf, 0, b.frame);
     }
     order = r.order;
   };
@@ -171,6 +213,7 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
         if (!g) continue;
         pass.setVertexBuffer(0, g.posBuf);
         pass.setVertexBuffer(1, g.uvBuf);
+        pass.setVertexBuffer(2, g.frameBuf);
         pass.drawIndexed(topo.indices.length);
       }
     }

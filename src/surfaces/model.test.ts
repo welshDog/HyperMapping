@@ -9,9 +9,10 @@ import {
   removeSurface,
   resizeRect,
   selectAfterRemove,
+  setSurfaceShape,
   surfaceColor,
 } from './model';
-import { FULL_RECT, MAX_SURFACES, MIN_SLICE, type Surface } from './types';
+import { FULL_RECT, MAX_SURFACES, MIN_SLICE, shapeOf, type Surface } from './types';
 import { isValidQuad } from '../warp/quad';
 
 const one = (): Surface[] => [{ id: 's1', corners: defaultCorners(0, 1), srcRect: FULL_RECT }];
@@ -214,5 +215,41 @@ describe('surfaceColor', () => {
     const colors = [0, 1, 2, 3, 4, 5].map(surfaceColor);
     expect(new Set(colors).size).toBe(6);
     expect(surfaceColor(6)).toBe(colors[0]);
+  });
+});
+
+describe('face shapes', () => {
+  it('addSurface with a shape appends that shape with the quad defaults', () => {
+    const base = one();
+    const withCircle = addSurface(base, 'circle');
+    const withQuad = addSurface(base);
+    expect(withCircle[1].shape).toBe('circle');
+    expect(withCircle[1].corners).toEqual(withQuad[1].corners);
+    expect(withCircle[1].srcRect).toEqual(withQuad[1].srcRect);
+  });
+  it('addSurface without a shape leaves no shape key', () => {
+    expect('shape' in addSurface(one())[1]).toBe(false);
+  });
+  it('setSurfaceShape changes only the shape', () => {
+    const list = grow(2);
+    const out = setSurfaceShape(list, 's2', 'triangle');
+    expect(out[1].shape).toBe('triangle');
+    expect(out[1].id).toBe('s2');
+    expect(out[1].corners).toEqual(list[1].corners);
+    expect(out[1].srcRect).toEqual(list[1].srcRect);
+    expect(out[0]).toBe(list[0]);
+  });
+  it('setSurfaceShape returns the same list for an unknown id or an unchanged shape', () => {
+    const list = grow(2);
+    expect(setSurfaceShape(list, 'nope', 'circle')).toBe(list);
+    expect(setSurfaceShape(list, 's1', 'quad')).toBe(list);
+  });
+  it('shapeOf defaults to quad', () => {
+    expect(shapeOf(one()[0])).toBe('quad');
+    expect(shapeOf({ ...one()[0], shape: 'circle' })).toBe('circle');
+  });
+  it('isValidSurfaces rejects an unknown shape value', () => {
+    const bad = [{ ...one()[0], shape: 'hexagon' as never }];
+    expect(isValidSurfaces(bad)).toBe(false);
   });
 });

@@ -1,6 +1,8 @@
 import { useRef, type PointerEvent } from 'react';
 import { moveRect, resizeRect, surfaceColor, type RectCorner } from '../surfaces/model';
-import type { SrcRect, Surface } from '../surfaces/types';
+import { shapeOutlinePoints } from '../surfaces/outline';
+import { shapeOf, type SrcRect, type Surface } from '../surfaces/types';
+import { UNIT_CORNERS } from '../warp/types';
 
 interface Props {
   surfaces: Surface[];
@@ -105,6 +107,20 @@ export function SliceEditor({ surfaces, selectedId, videoAspect, onChange, onClo
             onPointerUp={onBodyUp}
             onPointerCancel={onBodyUp}
           >
+            {shapeOf(selected) !== 'quad' && (
+              // Which part of the slice the shape lets through.
+              <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
+                <polygon
+                  points={shapeOutlinePoints(shapeOf(selected), UNIT_CORNERS)
+                    .map(([x, y]) => `${x},${y}`)
+                    .join(' ')}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            )}
             {HANDLES.map((h) => (
               <div
                 key={h.corner}
