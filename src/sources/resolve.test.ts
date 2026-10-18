@@ -57,6 +57,17 @@ describe('resolveFaceSources', () => {
     expect(resolveFaceSources(list, { ...g, hasVideo: false, patternAvailable: false }).get('o')).toEqual({ kind: 'none' });
   });
 
+  it('a per-owner check demotes only the owners without a source', () => {
+    const l = [owner('b'), owner('c'), sharer('bs', 'b'), sharer('cs', 'c')];
+    const r = resolveFaceSources(l, ctx({ generatorAvailable: (id) => id === 'c' }));
+    expect(r.get('b')).toEqual({ kind: 'video' });
+    expect(r.get('bs')).toEqual({ kind: 'video' });
+    expect(r.get('c')).toEqual({ kind: 'look', owner: 'c' });
+    expect(r.get('cs')).toEqual({ kind: 'look', owner: 'c' });
+    const r2 = resolveFaceSources(l, ctx({ hasVideo: false, generatorAvailable: (id) => id === 'c' }));
+    expect(r2.get('b')).toEqual({ kind: 'pattern' });
+  });
+
   it('a look face with no owner falls back by the video rule', () => {
     const r = resolveFaceSources([sharer('s', 'gone')], ctx());
     expect(r.get('s')).toEqual({ kind: 'video' });

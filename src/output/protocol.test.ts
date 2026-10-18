@@ -164,6 +164,19 @@ describe('parseMsg', () => {
         ['changedAt', 'look', 'on', 'prev', 'shuffleSec', 'speed', 'speedChangedAt', 'startedAt', 'stylePick', 'timeAnchor'],
       );
     });
+    it('boundaries: exactly 4 entries and a 32-char key are accepted', () => {
+      const four = Object.fromEntries(['a', 'b', 'c', 'd'].map((k) => [k, st()]));
+      expect(Object.keys((parseMsg({ type: 'looks', states: four }) as { states: object }).states)).toHaveLength(4);
+      const key = 'k'.repeat(32);
+      expect(Object.keys((parseMsg({ type: 'looks', states: { [key]: st() } }) as { states: object }).states)).toEqual([key]);
+    });
+    it('keeps __proto__ and constructor keys as plain own entries', () => {
+      const states = JSON.parse('{"__proto__":' + JSON.stringify(st()) + ',"constructor":' + JSON.stringify(st()) + '}');
+      const m = parseMsg({ type: 'looks', states }) as { states: Record<string, unknown> };
+      expect(Object.keys(m.states).sort()).toEqual(['__proto__', 'constructor']);
+      expect(Object.getPrototypeOf(m.states)).toBeNull();
+      expect(Object.hasOwn(m.states, '__proto__')).toBe(true);
+    });
     it('rejects the old generator message', () => {
       expect(parseMsg({ type: 'generator', state: st() })).toBeNull();
     });

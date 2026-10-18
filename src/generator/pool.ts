@@ -9,10 +9,12 @@ export type LookSource = Pick<
 type Audio = { bass: number; treble: number; vol: number };
 
 export interface LookPool {
-  /** False after a factory call returned null; true again once one succeeds. */
+  /** True when every owner given to the last sync has a source (false if any factory call returned null). */
   readonly available: boolean;
   /** Create sources for new owners, dispose those no longer listed. Retries owners that have none. */
   sync(owners: readonly string[]): void;
+  /** Exact answer for one owner: does it have a live source right now? */
+  hasSource(owner: string): boolean;
   setState(owner: string, state: GeneratorState): void;
   /** Listed owners get setActive(true), every other source false. */
   setActive(owners: ReadonlySet<string>): void;
@@ -43,6 +45,7 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
         }
       }
       for (const owner of [...states.keys()]) if (!wanted.has(owner)) states.delete(owner);
+      available = true;
       for (const owner of wanted) {
         if (sources.has(owner)) continue;
         const src = factory();
@@ -50,7 +53,6 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
           available = false;
           continue;
         }
-        available = true;
         sources.set(owner, src);
         const state = states.get(owner);
         if (state) src.setState(state);
@@ -58,6 +60,7 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
         if (activeSet) src.setActive(activeSet.has(owner));
       }
     },
+    hasSource: (owner) => sources.has(owner),
     setState(owner, state) {
       states.set(owner, state);
       sources.get(owner)?.setState(state);

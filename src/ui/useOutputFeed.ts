@@ -57,7 +57,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     let latest = 0; // guards against out-of-order async video loads
     let force = false; // the Editor's Test pattern button
     let surfaces: Surface[] = [];
-    let looks: LookStates = {};
+    let looks: LookStates = Object.create(null);
     const pattern = createPatternSource(); // null when the browser cannot make it
     patternRef.current = pattern;
     const pool = createLookPool(createGeneratorSource);
@@ -89,7 +89,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
       for (const id of [...fallback.keys()]) if (!ownerIds.has(id)) fallback.delete(id);
       for (const f of owners) {
         if (!f.look) continue;
-        let state = looks[f.id];
+        let state: GeneratorState | undefined = Object.hasOwn(looks, f.id) ? looks[f.id] : undefined;
         if (!state) {
           const cached = fallback.get(f.id);
           state = cached && sameSettings(settingsFromState(cached), f.look) ? cached : stateFromSettings(f.look, Date.now());
@@ -105,7 +105,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         patternForce: force,
         hasVideo: video !== null,
         patternAvailable: pattern !== null,
-        generatorAvailable: pool.available,
+        generatorAvailable: (owner) => pool.hasSource(owner),
       });
       pool.setActive(visibleLookOwners(resolved));
       const videos = new Map<string, HTMLVideoElement | null>();

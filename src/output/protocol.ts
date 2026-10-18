@@ -58,7 +58,7 @@ export function parseMsg(data: unknown): Msg | null {
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
       const entries = Object.entries(raw as Record<string, unknown>);
       if (entries.length > MAX_LOOKS) return null;
-      const states: Record<string, GeneratorState> = {};
+      const states: Record<string, GeneratorState> = Object.create(null);
       for (const [owner, value] of entries) {
         if (owner.length < 1 || owner.length > 32 || !isValidState(value)) return null;
         states[owner] = rebuildState(value);

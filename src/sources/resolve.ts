@@ -9,7 +9,8 @@ export interface ResolveContext {
   patternForce: boolean;
   hasVideo: boolean;
   patternAvailable: boolean;
-  generatorAvailable: boolean;
+  /** Whether generators work: one answer for all looks, or a per-owner check (owner face id). */
+  generatorAvailable: boolean | ((owner: string) => boolean);
 }
 
 const VIDEO: FaceSourceRef = { kind: 'video' };
@@ -33,8 +34,10 @@ export function resolveFaceSources(list: Surface[], ctx: ResolveContext): Map<st
         out.set(face.id, patternFirst(ctx));
         break;
       case 'look': {
-        const owner = ctx.generatorAvailable ? ownerOf(list, face) : null;
-        out.set(face.id, owner ? { kind: 'look', owner: owner.id } : videoFirst(ctx));
+        const owner = ownerOf(list, face);
+        const ga = ctx.generatorAvailable;
+        const alive = owner !== null && (typeof ga === 'function' ? ga(owner.id) : ga);
+        out.set(face.id, owner && alive ? { kind: 'look', owner: owner.id } : videoFirst(ctx));
         break;
       }
       default:

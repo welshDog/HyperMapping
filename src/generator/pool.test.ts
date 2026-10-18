@@ -102,6 +102,26 @@ describe('createLookPool', () => {
     expect(pool.video('a')).not.toBeNull();
   });
 
+  it('hasSource is exact per owner whichever factory call fails last', () => {
+    let failB = true;
+    let n = 0;
+    const pool = createLookPool(() => (n++ === 0 && failB ? null : makeFake()));
+    pool.sync(['b', 'c']); // b fails (first call), c succeeds (last call)
+    expect(pool.hasSource('b')).toBe(false);
+    expect(pool.hasSource('c')).toBe(true);
+    expect(pool.available).toBe(false);
+    failB = false;
+    pool.sync(['b', 'c']); // b recovers, c is kept
+    expect(pool.hasSource('b')).toBe(true);
+    expect(pool.hasSource('c')).toBe(true);
+    expect(pool.available).toBe(true);
+    const last = createLookPool(() => (n++ % 2 === 0 ? makeFake() : null));
+    n = 0;
+    last.sync(['x', 'y']); // x ok, y (last call) fails
+    expect(last.hasSource('x')).toBe(true);
+    expect(last.hasSource('y')).toBe(false);
+  });
+
   it('dispose disposes everything and is safe twice', () => {
     const { made, pool } = setup();
     pool.sync(['a', 'b']);
