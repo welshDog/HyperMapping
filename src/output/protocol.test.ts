@@ -133,7 +133,7 @@ describe('parseMsg', () => {
     }
   });
 
-  describe('generator message', () => {
+  describe('looks message', () => {
     const st = () => ({
       on: true,
       look: { style: 'neon', seed: 123 },
@@ -146,43 +146,41 @@ describe('parseMsg', () => {
       timeAnchor: 2,
       speedChangedAt: 800,
     });
-    it('accepts a valid state and returns an equal object', () => {
-      const state = st();
-      expect(parseMsg({ type: 'generator', state })).toEqual({ type: 'generator', state });
-      const withPrev = { ...st(), prev: { style: 'plasma', seed: 0 } };
-      expect(parseMsg({ type: 'generator', state: withPrev })).toEqual({ type: 'generator', state: withPrev });
+    it('round-trips two valid states', () => {
+      const states = { a: st(), b: { ...st(), prev: { style: 'plasma', seed: 0 } } };
+      expect(parseMsg({ type: 'looks', states })).toEqual({ type: 'looks', states });
+    });
+    it('accepts an empty map', () => {
+      expect(parseMsg({ type: 'looks', states: {} })).toEqual({ type: 'looks', states: {} });
     });
     it('drops extra top-level and nested fields', () => {
       const dirty = { ...st(), evil: 1, look: { style: 'neon', seed: 123, x: 1 }, prev: { style: 'plasma', seed: 5, y: 2 } };
-      const m = parseMsg({ type: 'generator', state: dirty, extra: 1 });
+      const m = parseMsg({ type: 'looks', states: { a: dirty }, extra: 1 });
       expect(m).toEqual({
-        type: 'generator',
-        state: { ...st(), look: { style: 'neon', seed: 123 }, prev: { style: 'plasma', seed: 5 } },
+        type: 'looks',
+        states: { a: { ...st(), look: { style: 'neon', seed: 123 }, prev: { style: 'plasma', seed: 5 } } },
       });
-      expect(Object.keys((m as { state: object }).state).sort()).toEqual(
+      expect(Object.keys((m as { states: Record<string, object> }).states.a).sort()).toEqual(
         ['changedAt', 'look', 'on', 'prev', 'shuffleSec', 'speed', 'speedChangedAt', 'startedAt', 'stylePick', 'timeAnchor'],
       );
     });
-    it('rejects invalid states', () => {
+    it('rejects the old generator message', () => {
+      expect(parseMsg({ type: 'generator', state: st() })).toBeNull();
+    });
+    it('rejects bad maps and bad entries', () => {
+      const five = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((k) => [k, st()]));
       const bads: unknown[] = [
-        { type: 'generator' },
-        { type: 'generator', state: 5 },
-        { type: 'generator', state: null },
-        { type: 'generator', state: { ...st(), changedAt: NaN } },
-        { type: 'generator', state: { ...st(), startedAt: Infinity } },
-        { type: 'generator', state: { ...st(), shuffleSec: 20 } },
-        { type: 'generator', state: { ...st(), look: { style: 'bogus', seed: 1 } } },
-        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: -1 } } },
-        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: 1.5 } } },
-        { type: 'generator', state: { ...st(), look: { style: 'neon', seed: 2 ** 32 } } },
-        { type: 'generator', state: { ...st(), on: 'yes' } },
-        { type: 'generator', state: { ...st(), prev: 'x' } },
-        { type: 'generator', state: { ...st(), prev: { style: 'neon' } } },
-        { type: 'generator', state: { ...st(), speed: 0 } },
-        { type: 'generator', state: { ...st(), speed: 'fast' } },
-        { type: 'generator', state: { ...st(), timeAnchor: -1 } },
-        { type: 'generator', state: { ...st(), speedChangedAt: NaN } },
-        { type: 'generator', state: (({ speed: _s, ...r }) => r)(st()) },
+        { type: 'looks' },
+        { type: 'looks', states: 5 },
+        { type: 'looks', states: null },
+        { type: 'looks', states: [st()] },
+        { type: 'looks', states: five },
+        { type: 'looks', states: { '': st() } },
+        { type: 'looks', states: { ['x'.repeat(40)]: st() } },
+        { type: 'looks', states: { a: st(), b: { ...st(), speed: 0 } } },
+        { type: 'looks', states: { a: 5 } },
+        { type: 'looks', states: { a: { ...st(), look: { style: 'bogus', seed: 1 } } } },
+        { type: 'looks', states: { a: { ...st(), changedAt: NaN } } },
       ];
       for (const b of bads) expect(parseMsg(b), JSON.stringify(b)).toBeNull();
     });

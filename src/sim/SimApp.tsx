@@ -79,7 +79,11 @@ export function SimApp() {
     }
     if (modeRef.current === 'app') rendererRef.current?.setSurfaces(s);
   }, []);
-  const { resumeVideo } = useOutputFeed(renderer, onAppSurfaces);
+  const { resumeVideo, setUniformSource } = useOutputFeed(renderer, onAppSurfaces);
+  // The solved layout's face ids collide with the app's, so there every face shows one shared picture.
+  useEffect(() => {
+    setUniformSource(mode === 'solved');
+  }, [mode, setUniformSource]);
 
   const cancelPendingSend = () => {
     if (pendingSend.current !== null) window.clearTimeout(pendingSend.current);

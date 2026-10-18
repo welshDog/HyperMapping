@@ -1,5 +1,6 @@
 import { parseFrameSpec, type FrameSpec } from '../calibrate/patterns';
 import { isValidState, type GeneratorState } from '../generator/shuffle';
+import { MAX_LOOKS } from '../surfaces/sources';
 import { parseSurfaceList } from '../surfaces/parse';
 import type { Surface } from '../surfaces/types';
 
@@ -10,7 +11,7 @@ export type Msg =
   | { type: 'surfaces'; surfaces: Surface[] } // editor -> output: the whole face list
   | { type: 'layout'; surfaces: Surface[] } // simulator -> editor: "use this face layout"
   | { type: 'pattern'; on: boolean } // editor -> others: show the test pattern even when a video is loaded
-  | { type: 'generator'; state: GeneratorState } // editor -> output: random-visuals generator state
+  | { type: 'looks'; states: Record<string, GeneratorState> } // editor -> output: state of each live look, by owner face id
   | { type: 'audio'; bass: number; treble: number; vol: number } // editor -> output: live sound levels, each 0..1
   | { type: 'video'; blob: Blob } // editor -> output (structured-clone copy)
   | { type: 'probe' } // editor -> output: "tell me your size"
@@ -21,6 +22,22 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 const isDim = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16384;
+
+/** Rebuild a validated state from its known fields only, so unknown keys never survive. */
+function rebuildState(s: GeneratorState): GeneratorState {
+  return {
+    on: s.on,
+    look: { style: s.look.style, seed: s.look.seed },
+    prev: s.prev === null ? null : { style: s.prev.style, seed: s.prev.seed },
+    changedAt: s.changedAt,
+    shuffleSec: s.shuffleSec,
+    startedAt: s.startedAt,
+    stylePick: s.stylePick,
+    speed: s.speed,
+    timeAnchor: s.timeAnchor,
+    speedChangedAt: s.speedChangedAt,
+  };
+}
 
 /** Validate anything that arrives on the channel; never trust the wire. */
 export function parseMsg(data: unknown): Msg | null {
@@ -36,22 +53,17 @@ export function parseMsg(data: unknown): Msg | null {
     }
     case 'pattern':
       return typeof d.on === 'boolean' ? { type: 'pattern', on: d.on } : null;
-    case 'generator': {
-      const s = d.state;
-      if (!isValidState(s)) return null;
-      const state: GeneratorState = {
-        on: s.on,
-        look: { style: s.look.style, seed: s.look.seed },
-        prev: s.prev === null ? null : { style: s.prev.style, seed: s.prev.seed },
-        changedAt: s.changedAt,
-        shuffleSec: s.shuffleSec,
-        startedAt: s.startedAt,
-        stylePick: s.stylePick,
-        speed: s.speed,
-        timeAnchor: s.timeAnchor,
-        speedChangedAt: s.speedChangedAt,
-      };
-      return { type: 'generator', state };
+    case 'looks': {
+      const raw = d.states;
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+      const entries = Object.entries(raw as Record<string, unknown>);
+      if (entries.length > MAX_LOOKS) return null;
+      const states: Record<string, GeneratorState> = {};
+      for (const [owner, value] of entries) {
+        if (owner.length < 1 || owner.length > 32 || !isValidState(value)) return null;
+        states[owner] = rebuildState(value);
+      }
+      return { type: 'looks', states };
     }
     case 'audio':
       return isNum(d.bass) && isNum(d.treble) && isNum(d.vol)
