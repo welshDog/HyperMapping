@@ -13,6 +13,7 @@ import {
   surfaceColor,
 } from './model';
 import { FULL_RECT, MAX_SURFACES, MIN_SLICE, shapeOf, type Surface } from './types';
+import { DEFAULT_LOOK_SETTINGS } from '../generator/settings';
 import { isValidQuad } from '../warp/quad';
 
 const one = (): Surface[] => [{ id: 's1', corners: defaultCorners(0, 1), srcRect: FULL_RECT }];
@@ -251,5 +252,26 @@ describe('face shapes', () => {
   it('isValidSurfaces rejects an unknown shape value', () => {
     const bad = [{ ...one()[0], shape: 'hexagon' as never }];
     expect(isValidSurfaces(bad)).toBe(false);
+  });
+});
+
+describe('removeSurface with looks', () => {
+  const f = (id: string, over: Partial<Surface> = {}): Surface => ({ id, corners: defaultCorners(0, 1), srcRect: FULL_RECT, ...over });
+  const lookA = { ...DEFAULT_LOOK_SETTINGS, speed: 1.5 };
+  it('promotes the first sharer of a removed owner and re-points the rest', () => {
+    const list = [f('s1', { source: 'look', look: lookA }), f('s2', { source: 'look', lookOf: 's1' }), f('s3', { source: 'look', lookOf: 's1' })];
+    expect(removeSurface(list, 's1')).toEqual([f('s2', { source: 'look', look: lookA }), f('s3', { source: 'look', lookOf: 's2' })]);
+  });
+  it('removing a sharer or a Video face leaves the rest identical', () => {
+    const list = [f('s1', { source: 'look', look: lookA }), f('s2', { source: 'look', lookOf: 's1' }), f('s3')];
+    const a = removeSurface(list, 's2');
+    expect(a[0]).toBe(list[0]);
+    expect(a[1]).toBe(list[2]);
+    const b = removeSurface(list, 's3');
+    expect(b[0]).toBe(list[0]);
+    expect(b[1]).toBe(list[1]);
+  });
+  it('isValidSurfaces rejects an unknown source', () => {
+    expect(isValidSurfaces([f('s1', { source: 'hologram' as never })])).toBe(false);
   });
 });

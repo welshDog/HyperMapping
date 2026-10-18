@@ -7,7 +7,7 @@ import { sameSettings, settingsFromState, stateFromSettings } from './settings';
 export type LookStates = Record<string, GeneratorState>;
 
 /** A face owns a look when its source is 'look', it has settings, and it is not sharing another's. */
-const ownsLook = (f: Surface): f is Surface & { look: NonNullable<Surface['look']> } =>
+export const ownsLook = (f: Surface): f is Surface & { look: NonNullable<Surface['look']> } =>
   sourceOf(f) === 'look' && f.lookOf === undefined && f.look !== undefined;
 
 /** One state per look-owning face; unchanged settings keep their state object. Returns `prev` if nothing changed. */

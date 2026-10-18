@@ -1,5 +1,6 @@
 import type { Corners } from '../warp/types';
-import { FACE_SHAPES, FULL_RECT, MAX_SURFACES, MIN_SLICE, type FaceShape, type SrcRect, type Surface } from './types';
+import { normalizeSources, promoteBeforeRemove } from './sources';
+import { FACE_SHAPES, FACE_SOURCES, FULL_RECT, MAX_SURFACES, MIN_SLICE, type FaceShape, type SrcRect, type Surface } from './types';
 
 const EPS = 1e-9;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -65,10 +66,10 @@ export function setSurfaceShape(list: Surface[], id: string, shape: FaceShape): 
   return list.map((s, k) => (k === i ? next : s));
 }
 
-/** Remove a face. Never removes the last one; unknown ids are ignored. */
+/** Remove a face (a look owner's first sharer inherits the look). Never removes the last one; unknown ids are ignored. */
 export function removeSurface(list: Surface[], id: string): Surface[] {
   if (list.length <= 1 || !list.some((s) => s.id === id)) return list;
-  return list.filter((s) => s.id !== id);
+  return normalizeSources(promoteBeforeRemove(list, id).filter((s) => s.id !== id));
 }
 
 /** Which face to select after `removedId` is removed from `listBefore`. */
@@ -122,6 +123,7 @@ export function isValidSurfaces(list: Surface[]): boolean {
     ids.add(s.id);
     if (!isValidSrcRect(s.srcRect)) return false;
     if (s.shape !== undefined && !FACE_SHAPES.includes(s.shape)) return false;
+    if (s.source !== undefined && !FACE_SOURCES.includes(s.source)) return false;
     const c = s.corners;
     if (!(isFiniteVec2(c.tl) && isFiniteVec2(c.tr) && isFiniteVec2(c.br) && isFiniteVec2(c.bl))) return false;
   }
