@@ -1,5 +1,6 @@
 import type { Surface } from '../surfaces/types';
 import { buildTopology } from '../warp/mesh';
+import { distinctVideos } from './face-videos';
 import { FrameLoop } from './frame-loop';
 import { SurfaceSync } from './surface-sync';
 import type { Renderer, RendererOptions } from './types';
@@ -138,19 +139,32 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     gl.deleteBuffer(s.frameBuf);
   };
 
-  const tex = gl.createTexture()!;
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  // One texture per distinct video element, created lazily and freed once no face uses the element.
+  const textures = new Map<HTMLVideoElement, WebGLTexture>();
+  const textureFor = (v: HTMLVideoElement): WebGLTexture => {
+    let t = textures.get(v);
+    if (!t) {
+      t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      textures.set(v, t);
+    }
+    return t;
+  };
   gl.uniform1i(gl.getUniformLocation(program, 'u_tex'), 0);
+  gl.activeTexture(gl.TEXTURE0); // the only unit used
 
   const sync = new SurfaceSync();
   const surfaces = new Map<string, GlSurface>();
   let order: string[] = [];
   let destroyed = false;
-  let video: HTMLVideoElement | null = null;
+  // Which video each face shows: one shared video (setVideo) or a per-face map (setFaceVideos); the last call wins.
+  let allVideo: HTMLVideoElement | null = null;
+  let faceVideos: ReadonlyMap<string, HTMLVideoElement | null> | null = null;
+  const pick = (id: string): HTMLVideoElement | null => (faceVideos ? (faceVideos.get(id) ?? null) : allVideo);
 
   const setSurfaces = (list: Surface[]) => {
     if (destroyed) return;
@@ -190,14 +204,27 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    if (!video || !isVideoReady(video)) return;
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video); // once per frame, shared by all faces
-    for (const id of order) {
-      const g = surfaces.get(id);
-      if (!g) continue;
-      gl.bindVertexArray(g.vao);
+    // Faces that have a mesh, in list order; unready videos stay "used" so their texture survives a brief stall.
+    const live = order.filter((id) => surfaces.has(id));
+    const used = distinctVideos(live, pick);
+    for (const [v, t] of textures) {
+      if (!used.includes(v)) {
+        gl.deleteTexture(t);
+        textures.delete(v);
+      }
+    }
+    const ready = new Set<HTMLVideoElement>();
+    for (const v of used) {
+      if (!isVideoReady(v)) continue;
+      gl.bindTexture(gl.TEXTURE_2D, textureFor(v));
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); // once per frame per distinct video
+      ready.add(v);
+    }
+    for (const id of live) {
+      const v = pick(id);
+      if (!v || !ready.has(v)) continue;
+      gl.bindTexture(gl.TEXTURE_2D, textures.get(v)!);
+      gl.bindVertexArray(surfaces.get(id)!.vao);
       gl.drawElements(gl.TRIANGLES, topo.indices.length, gl.UNSIGNED_SHORT, 0);
     }
     gl.bindVertexArray(null);
@@ -210,7 +237,12 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     onFrameTime: null,
     setSurfaces,
     setVideo: (v) => {
-      video = v;
+      allVideo = v;
+      faceVideos = null;
+    },
+    setFaceVideos: (m) => {
+      faceVideos = new Map(m); // copy: later edits to the caller's map must not leak in
+      allVideo = null;
     },
     setFpsCap: (cap) => {
       loop.fpsCap = cap;
@@ -226,7 +258,8 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
       loop.stop();
       for (const s of surfaces.values()) freeSurface(s);
       surfaces.clear();
-      gl.deleteTexture(tex);
+      for (const t of textures.values()) gl.deleteTexture(t);
+      textures.clear();
       gl.deleteBuffer(idxBuf);
       gl.deleteProgram(program);
     },

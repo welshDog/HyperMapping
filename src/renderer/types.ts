@@ -21,7 +21,13 @@ export interface Renderer {
    * previous UVs; other faces are unaffected. Faces missing from the list are freed.
    */
   setSurfaces(surfaces: Surface[]): void;
+  /** Every face shows this one video (null: nothing drawn). Replaces any per-face setting from `setFaceVideos`. */
   setVideo(video: HTMLVideoElement | null): void;
+  /**
+   * The video each face shows, by face id. A face missing from the map, or mapped to null, draws nothing.
+   * Each distinct video element is uploaded once per frame however many faces use it. Replaces `setVideo`'s setting.
+   */
+  setFaceVideos(videos: ReadonlyMap<string, HTMLVideoElement | null>): void;
   setFpsCap(cap: 30 | 60): void;
   start(): void;
   stop(): void;
