@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beatTargets, carryToHeirs, reconcileLooks, shuffleTargets, withLookSettings } from './looks';
+import { beatTargets, carryToHeirs, lookHandovers, reconcileLooks, shuffleTargets, withLookSettings } from './looks';
 import { removeSurface } from '../surfaces/model';
 import { setFaceSource } from '../surfaces/sources';
 import { randomizeState } from './shuffle';
@@ -138,12 +138,54 @@ describe('beatTargets', () => {
   });
 });
 
+describe('lookHandovers', () => {
+  const two = (): Surface[] => [
+    face('a', { source: 'look', look: ls(1) }),
+    face('s', { source: 'look', lookOf: 'a' }),
+    face('t', { source: 'look', lookOf: 'a' }),
+    face('b', { source: 'look', look: ls(2) }),
+  ];
+  it('an owner with 2 sharers deleted hands over to the first sharer', () => {
+    const l = two();
+    expect(lookHandovers(l, removeSurface(l, 'a'))).toEqual([{ from: 'a', to: 's' }]);
+  });
+  it('an owner switched to Video with sharers hands over the same way', () => {
+    const l = two();
+    expect(lookHandovers(l, setFaceSource(l, 'a', 'video', () => ls(9)))).toEqual([{ from: 'a', to: 's' }]);
+  });
+  it('two departed owners, each with a different sharer, give two pairs', () => {
+    const l: Surface[] = [
+      face('a', { source: 'look', look: ls(1) }),
+      face('b', { source: 'look', look: ls(2) }),
+      face('x', { source: 'look', lookOf: 'a' }),
+      face('y', { source: 'look', lookOf: 'b' }),
+    ];
+    const after = removeSurface(removeSurface(l, 'a'), 'b');
+    expect(lookHandovers(l, after)).toEqual([
+      { from: 'a', to: 'x' },
+      { from: 'b', to: 'y' },
+    ]);
+  });
+  it('a new-id owner with equal settings but no sharing link gets nothing', () => {
+    const l = two().filter((f) => f.id !== 's' && f.id !== 't');
+    const loaded: Surface[] = [face('n', { source: 'look', look: ls(1) }), face('b', { source: 'look', look: ls(2) })];
+    expect(lookHandovers(l, loaded)).toEqual([]);
+  });
+  it('no pair while the owner stays an owner, and a sharer that did not become an owner gets none', () => {
+    const l = two();
+    expect(lookHandovers(l, l)).toEqual([]);
+    // 'a' leaves, its sharers become Video: nobody inherits.
+    const gone = l.filter((f) => f.id !== 'a').map((f) => (f.lookOf === 'a' ? face(f.id) : f));
+    expect(lookHandovers(l, gone)).toEqual([]);
+  });
+});
+
 describe('carryToHeirs', () => {
-  it('a sharer promoted by deleting its owner keeps the owner state object (no restart)', () => {
+  it('the heir of a deleted shared owner keeps the owner state object (no restart)', () => {
     const l = list();
     const first = reconcileLooks({}, l, 1);
     const after = removeSurface(l, 'a'); // 's' becomes the owner of a's look
-    const out = carryToHeirs(first, reconcileLooks(first, after, 500));
+    const out = carryToHeirs(first, reconcileLooks(first, after, 500), lookHandovers(l, after));
     expect(Object.keys(out).sort()).toEqual(['b', 's']);
     expect(out.s).toBe(first.a);
     expect(out.b).toBe(first.b);
@@ -152,17 +194,24 @@ describe('carryToHeirs', () => {
     const l = list();
     const first = reconcileLooks({}, l, 1);
     const after = setFaceSource(l, 'a', 'video', () => ls(9));
-    const out = carryToHeirs(first, reconcileLooks(first, after, 500));
+    const out = carryToHeirs(first, reconcileLooks(first, after, 500), lookHandovers(l, after));
     expect(out.s).toBe(first.a);
   });
-  it('a genuinely new look (different settings) is left fresh, and no change returns the same object', () => {
+  it('a restored look with equal settings but no sharing link restarts cleanly', () => {
+    const l = list();
+    const mid = { ...reconcileLooks({}, l, 1) };
+    mid.a = { ...mid.a, prev: { style: 'neon', seed: 3 }, changedAt: 400 }; // mid-fade
+    const loaded: Surface[] = [face('n', { source: 'look', look: ls(1) }), face('b', { source: 'look', look: ls(2) })];
+    const out = carryToHeirs(mid, reconcileLooks(mid, loaded, 500), lookHandovers(l, loaded));
+    expect(out.n).not.toBe(mid.a);
+    expect(out.n.prev).toBeNull();
+    expect(out.n.changedAt).toBe(500);
+  });
+  it('returns next itself when nothing is carried', () => {
     const l = list();
     const first = reconcileLooks({}, l, 1);
-    const swapped = l.filter((f) => f.id !== 'b').concat(face('n', { source: 'look', look: ls(7) }));
-    const out = carryToHeirs(first, reconcileLooks(first, swapped, 500));
-    expect(out.n.changedAt).toBe(500);
-    expect(carryToHeirs(first, first)).toBe(first);
     const same = reconcileLooks(first, l, 2);
-    expect(carryToHeirs(first, same)).toBe(same);
+    expect(carryToHeirs(first, same, [])).toBe(same);
+    expect(carryToHeirs(first, first, lookHandovers(l, l))).toBe(first);
   });
 });

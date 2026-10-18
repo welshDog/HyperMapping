@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { createGeneratorSource } from '../generator/source';
 import { createLookPool, type LookPool } from '../generator/pool';
-import type { LookStates } from '../generator/looks';
+import { lookHandovers, type LookStates } from '../generator/looks';
 import { sameSettings, settingsFromState, stateFromSettings } from '../generator/settings';
 import type { GeneratorState } from '../generator/shuffle';
 import { CHANNEL, parseMsg } from '../output/protocol';
@@ -132,6 +132,13 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
       if (msg.type === 'surfaces') {
         if (onSurfacesRef.current) onSurfacesRef.current(msg.surfaces);
         else renderer.setSurfaces(msg.surfaces);
+        // A sharer took over a look (its owner deleted or switched away): keep that look's generator
+        // source, and its running state until the Editor's `looks` message names the new owner.
+        for (const { from, to } of lookHandovers(surfaces, msg.surfaces)) {
+          pool.rekey(from, to);
+          const running = Object.hasOwn(looks, from) ? looks[from] : fallback.get(from);
+          if (running) fallback.set(to, running);
+        }
         surfaces = msg.surfaces;
         apply();
       } else if (msg.type === 'pattern') {

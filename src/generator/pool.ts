@@ -15,6 +15,12 @@ export interface LookPool {
   sync(owners: readonly string[]): void;
   /** Exact answer for one owner: does it have a live source right now? */
   hasSource(owner: string): boolean;
+  /**
+   * A look changed owner id (a sharer took it over): move the source and its remembered state from `from`
+   * to `to`, so the next `sync` neither disposes nor recreates it. No-op if `from` has no source or `to`
+   * already has one.
+   */
+  rekey(from: string, to: string): void;
   setState(owner: string, state: GeneratorState): void;
   /** Listed owners get setActive(true), every other source false. */
   setActive(owners: ReadonlySet<string>): void;
@@ -61,6 +67,16 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
       }
     },
     hasSource: (owner) => sources.has(owner),
+    rekey(from, to) {
+      const src = sources.get(from);
+      if (!src || from === to || sources.has(to)) return;
+      sources.delete(from);
+      sources.set(to, src);
+      const state = states.get(from);
+      states.delete(from);
+      if (state) states.set(to, state);
+      else states.delete(to);
+    },
     setState(owner, state) {
       states.set(owner, state);
       sources.get(owner)?.setState(state);

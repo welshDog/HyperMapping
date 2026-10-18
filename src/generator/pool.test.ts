@@ -131,3 +131,42 @@ describe('createLookPool', () => {
     expect(pool.video('a')).toBeNull();
   });
 });
+
+describe('rekey', () => {
+  it('moves the same source instance to the new id; a later sync keeps it and disposes nothing', () => {
+    const { made, pool } = setup();
+    pool.sync(['a', 'b']);
+    pool.setState('a', st(1));
+    const vid = pool.video('a');
+    pool.rekey('a', 's');
+    expect(pool.hasSource('a')).toBe(false);
+    expect(pool.hasSource('s')).toBe(true);
+    expect(pool.video('s')).toBe(vid);
+    pool.sync(['s', 'b']);
+    expect(made).toHaveLength(2);
+    expect(made.every((f) => f.disposed === 0)).toBe(true);
+    pool.setActive(new Set(['s']));
+    expect(made[0].actives.at(-1)).toBe(true);
+    expect(made[1].actives.at(-1)).toBe(false);
+  });
+  it('later calls for the new id reach the moved source; the old id reaches nothing', () => {
+    const { made, pool } = setup();
+    pool.sync(['a']);
+    pool.rekey('a', 's');
+    pool.setState('s', st(7));
+    pool.setState('a', st(8));
+    expect(made[0].states.at(-1)).toEqual(st(7));
+    expect(pool.video('a')).toBeNull();
+  });
+  it('is a no-op when `from` has no source or `to` already has one', () => {
+    const { made, pool } = setup();
+    pool.sync(['a', 'b']);
+    pool.rekey('zz', 'q');
+    expect(pool.hasSource('q')).toBe(false);
+    pool.rekey('a', 'b');
+    expect(pool.video('a')).toBe(made[0].video);
+    expect(pool.video('b')).toBe(made[1].video);
+    pool.rekey('a', 'a');
+    expect(pool.hasSource('a')).toBe(true);
+  });
+});

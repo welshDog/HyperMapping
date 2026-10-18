@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { beatTargets, carryToHeirs, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
+import { beatTargets, carryToHeirs, lookHandovers, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
 import { createLookPool, type LookPool } from '../generator/pool';
 import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { newLookSettings as freshLookSettings, settingsFromState, type LookSettings } from '../generator/settings';
@@ -36,6 +36,7 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
   // A restored layout (autosave) can already have look faces: they get their states at once.
   const [initialLooks] = useState<LookStates>(() => reconcileLooks({}, surfacesRef.current, Date.now()));
   const looksRef = useRef<LookStates>(initialLooks);
+  const lastListRef = useRef<Surface[]>(surfacesRef.current); // the face list the looks were last reconciled with
   const [looks, setLooks] = useState<LookStates>(initialLooks);
   const [available, setAvailable] = useState(true);
   const visibleRef = useRef<ReadonlySet<string>>(new Set());
@@ -53,6 +54,7 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
         return inner.available;
       },
       sync: (owners) => inner.sync(owners),
+      rekey: (from, to) => inner.rekey(from, to),
       hasSource: (owner) => inner.hasSource(owner),
       setState: (owner, state) => inner.setState(owner, state),
       setActive: (owners) => {
@@ -99,17 +101,23 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
   /** Called by the Editor's `publish` for every face-list change. Unchanged look settings keep their state. */
   const reconcile = useCallback(
     (list: Surface[]) => {
-      // A sharer promoted to owner (its owner deleted or switched away) keeps that look's running state.
-      const next = carryToHeirs(looksRef.current, reconcileLooks(looksRef.current, list, Date.now()));
+      // A sharer that took over a look (its owner deleted or switched away) keeps that look's running
+      // state AND its generator source, so neither it nor the other sharers lose their picture.
+      const handovers = lookHandovers(lastListRef.current, list);
+      lastListRef.current = list;
+      const next = carryToHeirs(looksRef.current, reconcileLooks(looksRef.current, list, Date.now()), handovers);
       const changed = next !== looksRef.current;
       looksRef.current = next;
+      for (const { from, to } of handovers) {
+        pool.rekey(from, to); // before syncPool's sync, which then keeps it (syncPool pushes `to`'s state)
+      }
       syncPool();
       if (changed) {
         setLooks(next);
         broadcast();
       }
     },
-    [syncPool, broadcast],
+    [pool, syncPool, broadcast],
   );
 
   /** The single place one look changes: state, pool, the owner face's saved settings, the channel. */

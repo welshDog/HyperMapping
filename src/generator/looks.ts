@@ -63,25 +63,46 @@ export const beatTargets = (states: LookStates, visible: ReadonlySet<string>, no
     shouldBeatRandomize({ beat: true, settings: BEAT_LOOK_ON, generatorOn: true, listening: true, now, changedAt: s.changedAt }),
   );
 
+/** A look that moves from a departed owner to the face that took it over. */
+export interface LookHandover {
+  from: string;
+  to: string;
+}
+
 /**
- * When an owner leaves (deleted, or switched away) its first sharer becomes the owner of the same look
- * under its own id. `reconcileLooks` alone would restart that look from fresh clocks; this hands the
- * departed owner's state object to a new owner whose settings match, so the shared picture carries on.
- * Each departed state goes to at most one new owner. Returns `next` itself when nothing is carried.
+ * Which looks changed owner between two face lists: for each owner in `prev` that no longer owns a look in
+ * `next`, the first face (in `next` order) that SHARED it in `prev` and owns a look in `next`. Only a real
+ * sharing link counts, never equal settings (a restored look must restart cleanly). Each id is used once.
  */
-export function carryToHeirs(prev: LookStates, next: LookStates): LookStates {
-  if (next === prev) return next;
-  const departed = Object.keys(prev).filter((id) => !Object.hasOwn(next, id));
-  if (departed.length === 0) return next;
+export function lookHandovers(prev: Surface[], next: Surface[]): LookHandover[] {
+  const nextOwners = new Set(next.filter(ownsLook).map((f) => f.id));
+  const used = new Set<string>();
+  const out: LookHandover[] = [];
+  for (const owner of prev) {
+    if (!ownsLook(owner) || nextOwners.has(owner.id)) continue;
+    const sharers = new Set(
+      prev.filter((f) => f.id !== owner.id && sourceOf(f) === 'look' && f.look === undefined && f.lookOf === owner.id).map((f) => f.id),
+    );
+    const heir = next.find((f) => sharers.has(f.id) && nextOwners.has(f.id) && !used.has(f.id));
+    if (!heir) continue;
+    used.add(heir.id);
+    out.push({ from: owner.id, to: heir.id });
+  }
+  return out;
+}
+
+/**
+ * `reconcileLooks` alone restarts a taken-over look from fresh clocks under the heir's id; this gives the
+ * heir the departed owner's state object instead, for each handover whose settings still match, so the
+ * shared picture carries on. Returns `next` itself when nothing is carried.
+ */
+export function carryToHeirs(prev: LookStates, next: LookStates, handovers: readonly LookHandover[]): LookStates {
   let out: LookStates | null = null;
-  for (const id of Object.keys(next)) {
-    if (Object.hasOwn(prev, id)) continue; // not a new owner
-    const settings = settingsFromState(next[id]);
-    const i = departed.findIndex((d) => sameSettings(settingsFromState(prev[d]), settings));
-    if (i < 0) continue;
+  for (const { from, to } of handovers) {
+    if (!Object.hasOwn(prev, from) || !Object.hasOwn(next, to) || Object.hasOwn(prev, to)) continue;
+    if (!sameSettings(settingsFromState(prev[from]), settingsFromState(next[to]))) continue;
     out ??= { ...next };
-    out[id] = prev[departed[i]];
-    departed.splice(i, 1);
+    out[to] = prev[from];
   }
   return out ?? next;
 }
