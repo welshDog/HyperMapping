@@ -38,4 +38,23 @@ describe('parseSurfaceList', () => {
     expect(parseSurfaceList([surface('a', { srcRect: { u0: 0.5, v0: 0, u1: 0.5, v1: 1 } })])).toBeNull();
     expect(parseSurfaceList([surface('a', { srcRect: { u0: '0', v0: 0, u1: 1, v1: 1 } })])).toBeNull();
   });
+  describe('shape', () => {
+    it('loads a face with no shape as a quad (old setups)', () => {
+      const out = parseSurfaceList([surface('s1')])!;
+      expect('shape' in out[0]).toBe(false);
+    });
+    it('keeps triangle and circle', () => {
+      const out = parseSurfaceList([surface('s1', { shape: 'triangle' }), surface('s2', { shape: 'circle' })])!;
+      expect(out.map((f) => f.shape)).toEqual(['triangle', 'circle']);
+    });
+    it('writes no shape key for an explicit quad', () => {
+      const out = parseSurfaceList([surface('s1', { shape: 'quad' })])!;
+      expect('shape' in out[0]).toBe(false);
+    });
+    it('rejects the whole list for an unknown or non-string shape', () => {
+      expect(parseSurfaceList([surface('s1'), surface('s2', { shape: 'hexagon' })])).toBeNull();
+      expect(parseSurfaceList([surface('s1', { shape: 3 })])).toBeNull();
+      expect(parseSurfaceList([surface('s1', { shape: null })])).toBeNull();
+    });
+  });
 });

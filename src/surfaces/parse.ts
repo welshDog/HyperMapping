@@ -1,6 +1,6 @@
 import type { Vec2 } from '../warp/types';
 import { isValidSurfaces } from './model';
-import { MAX_SURFACES, type Surface } from './types';
+import { FACE_SHAPES, MAX_SURFACES, type FaceShape, type Surface } from './types';
 
 const isVec2 = (v: unknown): v is Vec2 =>
   Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
@@ -16,11 +16,14 @@ function parseSurface(raw: unknown): Surface | null {
   if (typeof s.id !== 'string' || !c || !r) return null;
   if (!(isVec2(c.tl) && isVec2(c.tr) && isVec2(c.br) && isVec2(c.bl))) return null;
   if (!(isNum(r.u0) && isNum(r.v0) && isNum(r.u1) && isNum(r.v1))) return null;
-  return {
+  if (s.shape !== undefined && !FACE_SHAPES.includes(s.shape as FaceShape)) return null;
+  const face: Surface = {
     id: s.id,
     corners: { tl: [c.tl[0], c.tl[1]], tr: [c.tr[0], c.tr[1]], br: [c.br[0], c.br[1]], bl: [c.bl[0], c.bl[1]] },
     srcRect: { u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1 },
   };
+  if (s.shape !== undefined && s.shape !== 'quad') face.shape = s.shape as FaceShape;
+  return face;
 }
 
 /**

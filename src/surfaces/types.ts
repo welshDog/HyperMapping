@@ -8,12 +8,21 @@ export interface SrcRect {
   v1: number;
 }
 
-/** One mapped face: where it sits on the canvas, and which slice of the video it shows. */
+export type FaceShape = 'quad' | 'triangle' | 'circle';
+export const FACE_SHAPES: readonly FaceShape[] = ['quad', 'triangle', 'circle'];
+
+/**
+ * One mapped face: where its four-pin frame sits on the canvas, and which slice of the video it shows.
+ * `shape` is cut out of the frame; missing means a plain quad (so old setups still load).
+ */
 export interface Surface {
   id: string;
   corners: Corners;
   srcRect: SrcRect;
+  shape?: FaceShape;
 }
+
+export const shapeOf = (s: Surface): FaceShape => s.shape ?? 'quad';
 
 export const MAX_SURFACES = 6;
 /** A slice is never smaller than this fraction of the video, in width or height. */
