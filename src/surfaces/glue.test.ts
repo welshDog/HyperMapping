@@ -222,3 +222,14 @@ describe('real Solve output', () => {
     }
   });
 });
+
+describe('glue across shapes', () => {
+  it('a pin shared by a circle face and a quad face still moves both, and keeps their shapes', () => {
+    const circle: Surface = { ...A, shape: 'circle' };
+    const out = moveGluedPin([circle, B, C], pin('a', 'tr'), [0.55, 0.25], { glue: true, radiusPx: 24, size: SIZE })!;
+    expect(out[0].corners.tr).toEqual([0.55, 0.25]);
+    expect(out[1].corners.tl).toEqual([0.55, 0.25]);
+    expect(out[0].shape).toBe('circle');
+    expect('shape' in out[1]).toBe(false);
+  });
+});

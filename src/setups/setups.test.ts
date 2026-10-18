@@ -225,3 +225,31 @@ describe('autosave', () => {
     expect(() => clearAutosave(throwing)).not.toThrow();
   });
 });
+
+describe('face shapes in setups', () => {
+  const shaped = (): Surface[] => {
+    const list = faces(3);
+    list[1] = { ...list[1], shape: 'triangle' };
+    list[2] = { ...list[2], shape: 'circle' };
+    return list;
+  };
+  it('a saved and exported setup keeps each face shape', () => {
+    const setup = { name: 'Collage', savedAt: 9, surfaces: shaped() };
+    expect(parseSetupFile(setupToFile(setup))!.surfaces.map((s) => s.shape)).toEqual([undefined, 'triangle', 'circle']);
+  });
+  it('a setup file written before shapes existed loads as all quads', () => {
+    const old = JSON.parse(setupToFile({ name: 'Old', savedAt: 1, surfaces: faces(2) }));
+    for (const s of old.surfaces) expect('shape' in s).toBe(false);
+    expect(parseSetupFile(JSON.stringify(old))!.surfaces.every((s) => s.shape === undefined)).toBe(true);
+  });
+  it('autosave keeps shapes', () => {
+    const store = new MemStore();
+    expect(saveAutosave(store, shaped(), 5)).toBe(true);
+    expect(loadAutosave(store)!.map((s) => s.shape)).toEqual([undefined, 'triangle', 'circle']);
+  });
+  it('an imported file with an unknown shape is rejected whole', () => {
+    const ok = JSON.parse(setupToFile({ name: 'Collage', savedAt: 9, surfaces: shaped() }));
+    ok.surfaces[1].shape = 'hexagon';
+    expect(parseSetupFile(JSON.stringify(ok))).toBeNull();
+  });
+});

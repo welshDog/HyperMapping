@@ -176,3 +176,9 @@ describe('toSurfaces', () => {
     expect(toSurfaces({ faces: [], skipped: [] })).toEqual([]);
   });
 });
+
+describe('toSurfaces and shapes', () => {
+  it('box faces are always plain quads (no shape key)', () => {
+    for (const s of toSurfaces(solveFaces(CUBE, CORNER_VIEW))) expect('shape' in s).toBe(false);
+  });
+});
