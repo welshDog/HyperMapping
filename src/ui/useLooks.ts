@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import { beatTargets, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
+import { beatTargets, carryToHeirs, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
 import { createLookPool, type LookPool } from '../generator/pool';
 import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { newLookSettings as freshLookSettings, settingsFromState, type LookSettings } from '../generator/settings';
@@ -99,7 +99,8 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
   /** Called by the Editor's `publish` for every face-list change. Unchanged look settings keep their state. */
   const reconcile = useCallback(
     (list: Surface[]) => {
-      const next = reconcileLooks(looksRef.current, list, Date.now());
+      // A sharer promoted to owner (its owner deleted or switched away) keeps that look's running state.
+      const next = carryToHeirs(looksRef.current, reconcileLooks(looksRef.current, list, Date.now()));
       const changed = next !== looksRef.current;
       looksRef.current = next;
       syncPool();

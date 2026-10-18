@@ -371,6 +371,8 @@ export function Editor() {
     const on = setFaceSource(list, selectedId, 'look', () => settingsFromState(next));
     if (on === list) return;
     publish(on);
+    // Through updateLook once, so the new look is remembered like every other look change.
+    if (Object.hasOwn(looksRef.current, selectedId)) looks.updateLook(selectedId, looksRef.current[selectedId]);
     bump();
   };
 

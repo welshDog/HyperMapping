@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { beatTargets, reconcileLooks, shuffleTargets, withLookSettings } from './looks';
+import { beatTargets, carryToHeirs, reconcileLooks, shuffleTargets, withLookSettings } from './looks';
+import { removeSurface } from '../surfaces/model';
+import { setFaceSource } from '../surfaces/sources';
 import { randomizeState } from './shuffle';
 import { mulberry32 } from './random';
 import type { Surface } from '../surfaces/types';
@@ -133,5 +135,34 @@ describe('beatTargets', () => {
     expect(beatTargets(changedB, new Set(['a', 'b']), 6000)).toEqual(['a']);
     expect(beatTargets(changedB, new Set(['a', 'b']), 10_000)).toEqual(['a', 'b']);
     expect(beatTargets(changedB, new Set(['b']), 10_000)).toEqual(['b']);
+  });
+});
+
+describe('carryToHeirs', () => {
+  it('a sharer promoted by deleting its owner keeps the owner state object (no restart)', () => {
+    const l = list();
+    const first = reconcileLooks({}, l, 1);
+    const after = removeSurface(l, 'a'); // 's' becomes the owner of a's look
+    const out = carryToHeirs(first, reconcileLooks(first, after, 500));
+    expect(Object.keys(out).sort()).toEqual(['b', 's']);
+    expect(out.s).toBe(first.a);
+    expect(out.b).toBe(first.b);
+  });
+  it('switching a shared owner to Video hands its state to the heir', () => {
+    const l = list();
+    const first = reconcileLooks({}, l, 1);
+    const after = setFaceSource(l, 'a', 'video', () => ls(9));
+    const out = carryToHeirs(first, reconcileLooks(first, after, 500));
+    expect(out.s).toBe(first.a);
+  });
+  it('a genuinely new look (different settings) is left fresh, and no change returns the same object', () => {
+    const l = list();
+    const first = reconcileLooks({}, l, 1);
+    const swapped = l.filter((f) => f.id !== 'b').concat(face('n', { source: 'look', look: ls(7) }));
+    const out = carryToHeirs(first, reconcileLooks(first, swapped, 500));
+    expect(out.n.changedAt).toBe(500);
+    expect(carryToHeirs(first, first)).toBe(first);
+    const same = reconcileLooks(first, l, 2);
+    expect(carryToHeirs(first, same)).toBe(same);
   });
 });

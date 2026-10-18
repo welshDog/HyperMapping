@@ -62,3 +62,26 @@ export const beatTargets = (states: LookStates, visible: ReadonlySet<string>, no
   dueOwners(states, visible, (s) =>
     shouldBeatRandomize({ beat: true, settings: BEAT_LOOK_ON, generatorOn: true, listening: true, now, changedAt: s.changedAt }),
   );
+
+/**
+ * When an owner leaves (deleted, or switched away) its first sharer becomes the owner of the same look
+ * under its own id. `reconcileLooks` alone would restart that look from fresh clocks; this hands the
+ * departed owner's state object to a new owner whose settings match, so the shared picture carries on.
+ * Each departed state goes to at most one new owner. Returns `next` itself when nothing is carried.
+ */
+export function carryToHeirs(prev: LookStates, next: LookStates): LookStates {
+  if (next === prev) return next;
+  const departed = Object.keys(prev).filter((id) => !Object.hasOwn(next, id));
+  if (departed.length === 0) return next;
+  let out: LookStates | null = null;
+  for (const id of Object.keys(next)) {
+    if (Object.hasOwn(prev, id)) continue; // not a new owner
+    const settings = settingsFromState(next[id]);
+    const i = departed.findIndex((d) => sameSettings(settingsFromState(prev[d]), settings));
+    if (i < 0) continue;
+    out ??= { ...next };
+    out[id] = prev[departed[i]];
+    departed.splice(i, 1);
+  }
+  return out ?? next;
+}
