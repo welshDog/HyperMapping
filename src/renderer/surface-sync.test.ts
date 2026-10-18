@@ -21,8 +21,8 @@ describe('SurfaceSync', () => {
     expect(r.removed).toEqual([]);
     expect(r.order).toEqual(['a', 'b']);
     const a = sync.buffers('a')!;
-    expect(a.positions.length).toBe(882);
-    expect(a.uvs.length).toBe(882);
+    expect(a.positions.length).toBe(1058);
+    expect(a.uvs.length).toBe(1058);
     const [x, y] = unitToNdc(quad.tl);
     expect(V(a.positions, 0)[0]).toBeCloseTo(x, 6);
     expect(V(a.positions, 0)[1]).toBeCloseTo(y, 6);
@@ -55,8 +55,8 @@ describe('SurfaceSync', () => {
     const uv = sync.buffers('a')!.uvs;
     expect(V(uv, 0)[0]).toBeCloseTo(0.25, 5);
     expect(V(uv, 0)[1]).toBeCloseTo(0.1, 5);
-    expect(V(uv, 440)[0]).toBeCloseTo(0.75, 5);
-    expect(V(uv, 440)[1]).toBeCloseTo(0.9, 5);
+    expect(V(uv, 504)[0]).toBeCloseTo(0.75, 5);
+    expect(V(uv, 504)[1]).toBeCloseTo(0.9, 5);
   });
 
   it('a bad quad freezes only that face; others still update', () => {
@@ -83,7 +83,7 @@ describe('SurfaceSync', () => {
     sync.sync([face('a', bow)]);
     const p = sync.buffers('a')!.positions;
     expect(V(p, 0)).toEqual([-1, 1]);
-    expect(V(p, 440)).toEqual([1, -1]);
+    expect(V(p, 504)).toEqual([1, -1]);
   });
 
   it('a new face with an invalid slice starts with the full video', () => {
@@ -91,7 +91,7 @@ describe('SurfaceSync', () => {
     sync.sync([face('a', quad, { u0: 0.9, v0: 0, u1: 0.1, v1: 1 })]);
     const uv = sync.buffers('a')!.uvs;
     expect(V(uv, 0)).toEqual([0, 0]);
-    expect(V(uv, 440)).toEqual([1, 1]);
+    expect(V(uv, 504)).toEqual([1, 1]);
   });
 
   it('reports removed faces, forgets their buffers, and keeps list order', () => {
@@ -132,7 +132,7 @@ describe('SurfaceSync shapes', () => {
     expect(r.changedUvs).toEqual(['c']);
     expect(r.changedFrames).toEqual(['c']);
     const f = sync.buffers('c')!.frame;
-    expect(f.length).toBe(441 * 3);
+    expect(f.length).toBe(529 * 3);
     expect(f[0]).toBeCloseTo(-0.02, 6);
     expect(f[1]).toBeCloseTo(-0.02, 6);
     expect(f[2]).toBe(2);

@@ -15,27 +15,36 @@ export interface MeshTopology {
   vertexCount: number;
 }
 
-/** Grid step -> frame coordinate: 0..1 across the frame, or -margin..1+margin when a margin is given. */
-const spread = (i: number, n: number, margin: number) => -margin + (i / n) * (1 + 2 * margin);
+/**
+ * Frame coordinates of the grid lines along one axis: the inner 0..1 grid (n steps, exactly as a quad has it)
+ * wrapped in one outer ring at -margin and 1+margin. With margin 0 the ring collapses onto 0 and 1 (zero-area
+ * cells that draw nothing), so quads look exactly as they did. The shape's edge at frame 0 and 1 therefore always
+ * sits ON mesh vertices; stretching the whole grid instead put it inside cells whose straight-line (non-perspective)
+ * interpolation spilled light past the shape on a strongly foreshortened frame.
+ */
+const gridLines = (n: number, margin: number): number[] => [0 - margin, ...Array.from({ length: n + 1 }, (_, i) => i / n), 1 + margin];
 
-/** Static data: uploaded to the GPU once and never changes. A margin spreads the UVs over -margin..1+margin. */
+/** Static data: uploaded to the GPU once and never changes. A margin puts the outer ring at -margin and 1+margin. */
 export function buildTopology(cols = GRID, rows = GRID, margin = 0): MeshTopology {
-  const vertexCount = (cols + 1) * (rows + 1);
+  const xs = gridLines(cols, margin);
+  const ys = gridLines(rows, margin);
+  const stride = xs.length;
+  const vertexCount = xs.length * ys.length;
   const uvs = new Float32Array(vertexCount * 2);
   let k = 0;
-  for (let r = 0; r <= rows; r++) {
-    for (let c = 0; c <= cols; c++) {
-      uvs[k++] = spread(c, cols, margin);
-      uvs[k++] = spread(r, rows, margin);
+  for (const y of ys) {
+    for (const x of xs) {
+      uvs[k++] = x;
+      uvs[k++] = y;
     }
   }
-  const indices = new Uint16Array(cols * rows * 6);
+  const indices = new Uint16Array((xs.length - 1) * (ys.length - 1) * 6);
   let n = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const i0 = r * (cols + 1) + c;
+  for (let r = 0; r < ys.length - 1; r++) {
+    for (let c = 0; c < xs.length - 1; c++) {
+      const i0 = r * stride + c;
       const i1 = i0 + 1;
-      const i2 = i0 + cols + 1;
+      const i2 = i0 + stride;
       const i3 = i2 + 1;
       indices.set([i0, i2, i1, i1, i2, i3], n);
       n += 6;
@@ -47,7 +56,7 @@ export function buildTopology(cols = GRID, rows = GRID, margin = 0): MeshTopolog
 /**
  * Vertex positions in NDC for the video quad pinned to `corners` (unit space).
  * Each grid vertex goes through the homography, so straight lines stay straight.
- * With a margin the grid covers -margin..1+margin of the frame (default 0: exactly the frame).
+ * With a margin an outer ring of vertices sits at -margin and 1+margin of the frame (default 0: exactly the frame).
  * Returns null (touching nothing) when the quad has no valid perspective transform.
  */
 export function warpedPositions(
@@ -61,11 +70,13 @@ export function warpedPositions(
   const dst = cornersToArray(corners).map(unitToNdc);
   const h = computeHomography(cornersToArray(UNIT_CORNERS), dst);
   if (!h) return null;
-  const buf = out ?? new Float32Array((cols + 1) * (rows + 1) * 2);
+  const xs = gridLines(cols, margin);
+  const ys = gridLines(rows, margin);
+  const buf = out ?? new Float32Array(xs.length * ys.length * 2);
   let k = 0;
-  for (let r = 0; r <= rows; r++) {
-    for (let c = 0; c <= cols; c++) {
-      const [x, y] = applyHomography(h, [spread(c, cols, margin), spread(r, rows, margin)]);
+  for (const gy of ys) {
+    for (const gx of xs) {
+      const [x, y] = applyHomography(h, [gx, gy]);
       buf[k++] = x;
       buf[k++] = y;
     }
@@ -87,13 +98,15 @@ export function scaleUvs(base: Float32Array, rect: SrcRect, out?: Float32Array):
 
 /** Per-vertex [frameX, frameY, shapeId] on the same grid as warpedPositions(..., margin); the fragment shader's input. */
 export function frameCoords(cols: number, rows: number, margin: number, shape: FaceShape, out?: Float32Array): Float32Array {
-  const buf = out ?? new Float32Array((cols + 1) * (rows + 1) * 3);
+  const xs = gridLines(cols, margin);
+  const ys = gridLines(rows, margin);
+  const buf = out ?? new Float32Array(xs.length * ys.length * 3);
   const id = shapeId(shape);
   let k = 0;
-  for (let r = 0; r <= rows; r++) {
-    for (let c = 0; c <= cols; c++) {
-      buf[k++] = spread(c, cols, margin);
-      buf[k++] = spread(r, rows, margin);
+  for (const y of ys) {
+    for (const x of xs) {
+      buf[k++] = x;
+      buf[k++] = y;
       buf[k++] = id;
     }
   }
