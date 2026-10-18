@@ -8,19 +8,34 @@ import { isVideoReady } from './video-ready';
 const VS = `#version 300 es
 in vec2 a_pos;
 in vec2 a_uv;
+in vec3 a_frame;
 out vec2 v_uv;
+out vec3 v_frame;
 void main() {
   gl_Position = vec4(a_pos, 0.0, 1.0);
   v_uv = a_uv;
+  v_frame = a_frame;
 }`;
 
+// The shape maths mirrors shapeDistance() in src/warp/shape.ts and the WGSL in webgpu.ts: change all three together.
+// v_frame = (frameX, frameY, shape id); quads are id 0 and always fully covered. Coverage turns the signed
+// distance into a ~1 pixel anti-aliased edge; the output is premultiplied so it blends over the black clear colour.
 const FS = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 v_uv;
+in vec3 v_frame;
 uniform sampler2D u_tex;
 out vec4 o_color;
 void main() {
-  o_color = texture(u_tex, v_uv);
+  vec2 p = v_frame.xy;
+  int shape = int(v_frame.z + 0.5);
+  float circle = length(p - 0.5) - 0.5;
+  float inv = 0.8944271909999159; // 1 / sqrt(1.25)
+  float tri = max(max((-(p.x - 0.5) - 0.5 * p.y) * inv, ((p.x - 0.5) - 0.5 * p.y) * inv), p.y - 1.0);
+  float f = shape == 2 ? circle : (shape == 1 ? tri : -1.0);
+  float w = max(length(vec2(dFdx(f), dFdy(f))), 1e-6);
+  float cov = shape == 0 ? 1.0 : clamp(0.5 - f / w, 0.0, 1.0);
+  o_color = vec4(texture(u_tex, v_uv).rgb * cov, cov);
 }`;
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -39,6 +54,7 @@ interface GlSurface {
   vao: WebGLVertexArrayObject;
   posBuf: WebGLBuffer;
   uvBuf: WebGLBuffer;
+  frameBuf: WebGLBuffer;
 }
 
 export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: RendererOptions = {}): Renderer {
@@ -76,11 +92,16 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     throw new Error(`Program link failed: ${linkLog}`);
   }
   gl.useProgram(program);
+  // Shape edges blend over the black clear colour (premultiplied output); quads have coverage 1, so they are unchanged.
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
   const topo = buildTopology();
   const aPos = gl.getAttribLocation(program, 'a_pos');
   const aUv = gl.getAttribLocation(program, 'a_uv');
+  const aFrame = gl.getAttribLocation(program, 'a_frame');
   const surfaceBytes = topo.vertexCount * 2 * 4;
+  const frameBytes = topo.vertexCount * 3 * 4;
 
   // One index buffer shared by every face; each face's VAO captures it.
   const idxBuf = gl.createBuffer()!;
@@ -100,15 +121,21 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     gl.bufferData(gl.ARRAY_BUFFER, surfaceBytes, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(aUv);
     gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+    const frameBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, frameBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, frameBytes, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(aFrame);
+    gl.vertexAttribPointer(aFrame, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.bindVertexArray(null);
-    return { vao, posBuf, uvBuf };
+    return { vao, posBuf, uvBuf, frameBuf };
   };
 
   const freeSurface = (s: GlSurface) => {
     gl.deleteVertexArray(s.vao);
     gl.deleteBuffer(s.posBuf);
     gl.deleteBuffer(s.uvBuf);
+    gl.deleteBuffer(s.frameBuf);
   };
 
   const tex = gl.createTexture()!;
@@ -147,6 +174,13 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
       if (!g || !b) continue;
       gl.bindBuffer(gl.ARRAY_BUFFER, g.uvBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.uvs);
+    }
+    for (const id of r.changedFrames) {
+      const g = surfaces.get(id);
+      const b = sync.buffers(id);
+      if (!g || !b) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.frameBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, b.frame);
     }
     order = r.order;
   };
