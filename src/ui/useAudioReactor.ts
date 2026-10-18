@@ -2,11 +2,10 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import { bandLevels } from '../audio/bands';
 import { createBeatDetector } from '../audio/beat';
 import { createAudioListener, type AudioListener } from '../audio/listener';
-import { createLevelThrottle, scaleBySensitivity, shouldBeatRandomize } from '../audio/reactor-logic';
+import { createLevelThrottle, scaleBySensitivity } from '../audio/reactor-logic';
 import { loadAudioSettings, masked, parseAudioSettings, saveAudioSettings, type AudioSettings } from '../audio/settings';
 import { createLevelTracker } from '../audio/tracker';
-import { randomizeState, type GeneratorState } from '../generator/shuffle';
-import type { GeneratorSource } from '../generator/source';
+import type { LookPool } from '../generator/pool';
 import { getBrowserStore } from '../setups/browser-store';
 
 export type AudioStatus = 'off' | 'starting' | 'listening' | 'denied' | 'no-mic' | 'unsupported';
@@ -20,10 +19,10 @@ const ZERO: MeterLevels = { bass: 0, treble: 0, volume: 0 };
 
 interface Args {
   channelRef: MutableRefObject<BroadcastChannel | null>;
-  genStateRef: MutableRefObject<GeneratorState>;
-  /** The Editor's own generator picture: a channel never delivers to its sender, so it is fed directly. */
-  genSourceRef: MutableRefObject<GeneratorSource | null>;
-  updateGenerator: (next: GeneratorState) => void;
+  /** The Editor's own looks: a channel never delivers to its sender, so every look is fed directly. */
+  poolRef: MutableRefObject<LookPool | null>;
+  /** A beat while listening with "Big beat starts a new look" ticked (each look applies its own throttle). */
+  onBeat: (now: number) => void;
 }
 
 /**
@@ -32,7 +31,7 @@ interface Args {
  * callback reads lives in refs, never in React state. No unit tests for this file (DOM / React, Node test
  * env); the pure decisions it uses are tested in audio/reactor-logic.test.ts.
  */
-export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateGenerator }: Args) {
+export function useAudioReactor({ channelRef, poolRef, onBeat }: Args) {
   const [store] = useState(() => getBrowserStore());
   const [settings, setSettingsState] = useState<AudioSettings>(() => loadAudioSettings(store));
   const [status, setStatus] = useState<AudioStatus>('off');
@@ -41,8 +40,8 @@ export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateG
   const [supported] = useState(() => createAudioListener() !== null);
 
   const settingsRef = useRef(settings);
-  const updateGeneratorRef = useRef(updateGenerator);
-  updateGeneratorRef.current = updateGenerator;
+  const onBeatRef = useRef(onBeat);
+  onBeatRef.current = onBeat;
   const listenerRef = useRef<AudioListener | null>(null);
   const listeningRef = useRef(false);
   const startingRef = useRef(false); // a start() is in flight and has not settled yet
@@ -51,13 +50,13 @@ export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateG
   const detectorRef = useRef(createBeatDetector());
   const throttleRef = useRef(createLevelThrottle());
 
-  /** The one place levels go out: the Output window(s) over the channel and the Editor's own picture. */
+  /** The one place levels go out: the Output window(s) over the channel and every look of the Editor's own. */
   const sendLevels = useCallback(
     (bass: number, treble: number, vol: number) => {
       channelRef.current?.postMessage({ type: 'audio', bass, treble, vol });
-      genSourceRef.current?.setAudio({ bass, treble, vol });
+      poolRef.current?.setAudio({ bass, treble, vol });
     },
-    [channelRef, genSourceRef],
+    [channelRef, poolRef],
   );
   const postZeros = useCallback(() => sendLevels(0, 0, 0), [sendLevels]);
 
@@ -91,12 +90,9 @@ export function useAudioReactor({ channelRef, genStateRef, genSourceRef, updateG
       if (throttleRef.current.due(now)) {
         setLevels({ bass: scaled.bass, treble: scaled.treble, volume: scaled.volume });
       }
-      const gen = genStateRef.current;
-      if (shouldBeatRandomize({ beat, settings: s, generatorOn: gen.on, listening: true, now, changedAt: gen.changedAt })) {
-        updateGeneratorRef.current(randomizeState(gen, now, Math.random));
-      }
+      if (beat && s.beatLook) onBeatRef.current(now); // listening is already true here
     },
-    [sendLevels, genStateRef],
+    [sendLevels],
   );
 
   const stop = useCallback(() => {

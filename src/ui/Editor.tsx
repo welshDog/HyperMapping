@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { pickSource } from '../generator/select';
-import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
-import { randomizeState, shuffleDue, type GeneratorState } from '../generator/shuffle';
-import { createGeneratorSource, type GeneratorSource } from '../generator/source';
+import { settingsFromState, stateFromSettings } from '../generator/settings';
+import type { GeneratorState } from '../generator/shuffle';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { DEMO_FILE_NAME, demoVideoUrl } from '../sources/demo';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
+import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../sources/resolve';
+import { canStartLook, ownerOf, setFaceSource } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape } from '../surfaces/model';
@@ -23,6 +23,7 @@ import { GeneratorPanel } from './GeneratorPanel';
 import { SetupsPanel } from './SetupsPanel';
 import { SurfaceBar } from './SurfaceBar';
 import { useAudioReactor } from './useAudioReactor';
+import { useLooks } from './useLooks';
 import { useRenderer } from './useRenderer';
 import { useWakeLock } from './wakeLock';
 
@@ -47,12 +48,9 @@ export function Editor() {
   const patternRef = useRef<PatternSource | null>(null);
   const [patternAvailable, setPatternAvailable] = useState(true); // false when the browser cannot make the pattern
   const [patternForce, setPatternForce] = useState(false); // show the pattern even when a video is loaded; not saved
-  const patternForceRef = useRef(false); // read by the channel effect and applySource
-  const genSourceRef = useRef<GeneratorSource | null>(null);
-  const [genAvailable, setGenAvailable] = useState(true); // false when the browser cannot make the generator
-  // The generator is always Off after a reload; only the look, shuffle and style choice are remembered.
-  const [genState, setGenState] = useState<GeneratorState>(() => loadGeneratorState(store, Date.now(), Math.random));
-  const genStateRef = useRef<GeneratorState>(genState); // read by the channel effect, the shuffle timer and applySource
+  const patternForceRef = useRef(false); // read by the channel effect and applySources
+  const applySourcesRef = useRef<() => void>(() => {});
+  const publishRef = useRef<(list: Surface[]) => void>(() => {});
   const adoptLayoutRef = useRef<(list: Surface[]) => void>(() => {});
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [sliceMode, setSliceMode] = useState(false);
@@ -75,16 +73,28 @@ export function Editor() {
     [store],
   );
 
-  /** The single place a face list change goes out: ref, renderer, the output window, and the autosave. */
+  // The live looks (one per look-owning face). `publish` is passed through a ref: it calls back into here.
+  const stablePublish = useCallback((list: Surface[]) => publishRef.current(list), []);
+  const looks = useLooks({ renderer, store, channelRef, surfacesRef, publish: stablePublish, applySourcesRef });
+  const { pool, looksRef, reconcile: reconcileLooks } = looks;
+  const poolRef = useRef(pool); // for the audio reactor; the pool lives as long as the Editor
+
+  /**
+   * The single place a face list change goes out: ref, renderer, the output window, the autosave, the
+   * looks (a change that leaves look settings alone restarts nothing) and what each face shows.
+   */
   const publish = useCallback(
     (list: Surface[]) => {
       surfacesRef.current = list;
       renderer?.setSurfaces(list);
       channelRef.current?.postMessage({ type: 'surfaces', surfaces: list });
       autosaver.schedule(list);
+      reconcileLooks(list);
+      applySourcesRef.current();
     },
-    [renderer, autosaver],
+    [renderer, autosaver, reconcileLooks],
   );
+  publishRef.current = publish;
 
   // Save the layout right away when the page is hidden or closed, and when the Editor unmounts.
   useEffect(() => {
@@ -105,79 +115,47 @@ export function Editor() {
     renderer?.setSurfaces(surfacesRef.current);
   }, [renderer]);
 
-  /** Give the renderer the test pattern, the generator or the video, whichever should be showing. */
-  const applySource = useCallback(() => {
+  /** What the faces can show right now (the Test pattern button overrides every face). */
+  const resolveContext = useCallback(
+    (): ResolveContext => ({
+      patternForce: patternForceRef.current,
+      hasVideo: videoRef.current !== null,
+      patternAvailable: patternRef.current !== null,
+      generatorAvailable: (owner) => pool.hasSource(owner),
+    }),
+    [pool],
+  );
+
+  /**
+   * Give the renderer, per face, the video of what that face shows: its look, the test pattern or the
+   * loaded video. Only looks some face is showing draw; every other look is told to stop.
+   */
+  const applySources = useCallback(() => {
     if (!renderer) return;
     const pattern = patternRef.current;
-    const generator = genSourceRef.current;
     const video = videoRef.current;
-    const kind = pickSource({
-      patternForce: patternForceRef.current,
-      generatorOn: genStateRef.current.on,
-      hasVideo: video !== null,
-      patternAvailable: pattern !== null,
-      generatorAvailable: generator !== null,
-    });
-    const source =
-      kind === 'pattern' && pattern
-        ? pattern.video
-        : kind === 'generator' && generator
-          ? generator.video
-          : kind === 'video' && video
-            ? video.video
-            : null;
-    generator?.setActive(kind === 'generator');
-    renderer.setVideo(source);
-  }, [renderer]);
-
-  /** The single place a generator change goes out: ref, state, the output window, the source and the renderer. */
-  const updateGenerator = useCallback(
-    (next: GeneratorState) => {
-      genStateRef.current = next;
-      setGenState(next);
-      channelRef.current?.postMessage({ type: 'generator', state: next });
-      genSourceRef.current?.setState(next);
-      applySource();
-    },
-    [applySource],
-  );
+    const resolved = resolveFaceSources(surfacesRef.current, resolveContext());
+    pool.setActive(visibleLookOwners(resolved));
+    const videos = new Map<string, HTMLVideoElement | null>();
+    for (const [id, ref] of resolved) {
+      videos.set(
+        id,
+        ref.kind === 'look'
+          ? pool.video(ref.owner)
+          : ref.kind === 'pattern'
+            ? (pattern?.video ?? null)
+            : ref.kind === 'video'
+              ? (video?.video ?? null)
+              : null,
+      );
+    }
+    renderer.setFaceVideos(videos);
+  }, [renderer, pool, resolveContext]);
+  applySourcesRef.current = applySources;
 
   // The microphone engine. Called BEFORE the channel effect so its unmount cleanup (final zero message)
   // runs while the channel is still open.
-  const audio = useAudioReactor({ channelRef, genStateRef, genSourceRef, updateGenerator });
-
-  // The generator source lives as long as the renderer; it only draws while the generator is on.
-  useEffect(() => {
-    if (!renderer) return;
-    const source = createGeneratorSource();
-    genSourceRef.current = source;
-    setGenAvailable(source !== null);
-    source?.setState(genStateRef.current);
-    if (source === null && genStateRef.current.on) {
-      updateGenerator({ ...genStateRef.current, on: false }); // unsupported: force off and tell the Output window
-    } else {
-      applySource();
-    }
-    return () => {
-      source?.dispose();
-      if (genSourceRef.current === source) genSourceRef.current = null;
-    };
-  }, [renderer, applySource, updateGenerator]);
-
-  // While the generator is on and a shuffle time is set, pick a new look when it is due.
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const state = genStateRef.current;
-      const now = Date.now();
-      if (shuffleDue(state, now)) updateGenerator(randomizeState(state, now, Math.random));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [updateGenerator]);
-
-  // Remember the look, the shuffle choice and the style pick (never "on") for the next reload.
-  useEffect(() => {
-    if (store) saveGeneratorState(store, genState);
-  }, [store, genState]);
+  const audio = useAudioReactor({ channelRef, poolRef, onBeat: looks.beatRandomize });
 
   // The test pattern source lives as long as the renderer; it is shown while there is no video.
   useEffect(() => {
@@ -190,19 +168,19 @@ export function Editor() {
       setPatternForce(false);
       channelRef.current?.postMessage({ type: 'pattern', on: false });
     }
-    applySource();
+    applySources();
     return () => {
       source?.dispose();
       if (patternRef.current === source) patternRef.current = null;
     };
-  }, [renderer, applySource]);
+  }, [renderer, applySources]);
 
   const togglePattern = () => {
     const next = !patternForceRef.current;
     patternForceRef.current = next;
     setPatternForce(next);
     channelRef.current?.postMessage({ type: 'pattern', on: next });
-    applySource();
+    applySources();
   };
 
   // Autoplay can be refused, and backgrounding pauses the video: a paused video
@@ -212,8 +190,8 @@ export function Editor() {
     const v = videoRef.current?.video;
     if (v?.paused) v.play().catch(() => {});
     patternRef.current?.ensurePlaying();
-    genSourceRef.current?.ensurePlaying();
-  }, []);
+    pool.ensurePlaying();
+  }, [pool]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -236,14 +214,14 @@ export function Editor() {
       // A new output window asked for everything we have.
       ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
       ch.postMessage({ type: 'pattern', on: patternForceRef.current });
-      ch.postMessage({ type: 'generator', state: genStateRef.current });
+      ch.postMessage({ type: 'looks', states: looksRef.current });
       if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     };
     // An output window that was already open (e.g. this editor was reloaded) never sends
     // a new hello, so push our state once now.
     ch.postMessage({ type: 'surfaces', surfaces: surfacesRef.current });
     ch.postMessage({ type: 'pattern', on: patternForceRef.current });
-    ch.postMessage({ type: 'generator', state: genStateRef.current });
+    ch.postMessage({ type: 'looks', states: looksRef.current });
     if (blobRef.current) ch.postMessage({ type: 'video', blob: blobRef.current });
     return () => {
       ch.close();
@@ -316,7 +294,8 @@ export function Editor() {
     bump();
   };
 
-  // The simulator computed a face layout: replace the face list, select the first face.
+  // The simulator computed a face layout (or a setup was loaded, or Start fresh): replace the face list
+  // through `publish` (so the looks reconcile), select the first face.
   // Stored in a ref because the channel effect below runs once and must see the latest `publish`.
   adoptLayoutRef.current = (list: Surface[]) => {
     publish(list);
@@ -325,7 +304,7 @@ export function Editor() {
     bump();
   };
 
-  // Back to a single default face; also forgets the remembered layout.
+  // Back to a single default Video face; also forgets the remembered layout.
   const startFresh = () => {
     adoptLayoutRef.current(INITIAL_SURFACES);
     autosaver.cancel();
@@ -338,18 +317,62 @@ export function Editor() {
     bump(); // the slice panel is a small tree; re-rendering it per move is fine
   };
 
-  // The slice box has the shape of the picture actually on the faces: the test pattern's while it is
-  // showing, otherwise the loaded video's.
+  // The slice box has the shape of the picture actually on the SELECTED face: 16:9 for the test pattern
+  // or a look, otherwise the loaded video's. (Task 8 reworks slice aspect per face.)
+  const selectedShows = resolveFaceSources(surfacesRef.current, resolveContext()).get(selectedId);
   const videoAspect = (() => {
     const v = videoRef.current?.video;
     return sliceAspect({
-      force: patternForce,
+      force: selectedShows?.kind === 'pattern',
       patternAvailable,
-      generatorOn: genState.on,
-      generatorAvailable: genAvailable,
+      generatorOn: selectedShows?.kind === 'look',
+      generatorAvailable: true,
       video: v ? { width: v.videoWidth, height: v.videoHeight } : null,
     });
   })();
+
+  // The Visuals panel edits the selected face's look (its own, or the one it shares). A face not on a
+  // look gets an Off draft: changes made while Off stay in the draft, and switching On gives the face its
+  // own look made from the draft. Task 8 replaces this adapter with the real per-face panel.
+  const selectedFace = surfacesRef.current.find((f) => f.id === selectedId) ?? null;
+  const selectedOwner = selectedFace ? ownerOf(surfacesRef.current, selectedFace) : null;
+  const selectedLook =
+    selectedOwner && Object.hasOwn(looks.looks, selectedOwner.id) ? looks.looks[selectedOwner.id] : null;
+  const offDraft = (): GeneratorState => ({ ...stateFromSettings(looks.newLookSettings(), Date.now()), on: false });
+  const [draft, setDraft] = useState<GeneratorState>(offDraft);
+  useEffect(() => {
+    if (visualsOpen) setDraft(offDraft()); // a fresh draft each time the panel opens or the selection changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- offDraft only reads stable things
+  }, [visualsOpen, selectedId]);
+
+  const onVisualsChange = (next: GeneratorState) => {
+    const list = surfacesRef.current;
+    if (selectedLook && selectedOwner) {
+      if (next.on) {
+        looks.updateLook(selectedOwner.id, next);
+        return;
+      }
+      // "Visuals: off" puts this face back on Video; faces sharing its look keep their picture.
+      const off = setFaceSource(list, selectedId, 'video', looks.newLookSettings);
+      if (off !== list) {
+        publish(off);
+        bump();
+      }
+      return;
+    }
+    if (!next.on) {
+      setDraft(next);
+      return;
+    }
+    if (!canStartLook(list)) {
+      setNotice('At most 4 different looks can run at once: turn one off first.');
+      return;
+    }
+    const on = setFaceSource(list, selectedId, 'look', () => settingsFromState(next));
+    if (on === list) return;
+    publish(on);
+    bump();
+  };
 
   /** Show a video on the faces and send it to the Output window: shared by the file picker and the demo button. */
   const loadVideoBlob = async (file: Blob) => {
@@ -359,7 +382,7 @@ export function Editor() {
       videoRef.current?.dispose();
       videoRef.current = handle;
       blobRef.current = file;
-      applySource();
+      applySources();
       channelRef.current?.postMessage({ type: 'video', blob: file });
       if (handle.playing) {
         setNotice(null);
@@ -518,12 +541,12 @@ export function Editor() {
           </button>
           <button
             aria-haspopup="dialog"
-            disabled={!genAvailable}
-            title={genAvailable ? undefined : 'Visuals are not supported in this browser'}
-            className={`rounded-lg px-4 py-3 font-medium min-w-[8.5rem] disabled:opacity-40 ${genState.on ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
+            disabled={!looks.available}
+            title={looks.available ? undefined : 'Visuals are not supported in this browser'}
+            className={`rounded-lg px-4 py-3 font-medium min-w-[8.5rem] disabled:opacity-40 ${selectedLook ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
             onClick={() => setVisualsOpen(true)}
           >
-            Visuals: {genState.on ? 'on' : 'off'}
+            Visuals: {selectedLook ? 'on' : 'off'}
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
@@ -577,10 +600,10 @@ export function Editor() {
 
       {mode === 'edit' && visualsOpen && (
         <GeneratorPanel
-          state={genState}
-          available={genAvailable}
+          state={selectedLook ?? draft}
+          available={looks.available}
           patternForce={patternForce}
-          onChange={updateGenerator}
+          onChange={onVisualsChange}
           audio={audio}
           onClose={() => setVisualsOpen(false)}
         />
