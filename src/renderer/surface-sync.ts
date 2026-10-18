@@ -1,6 +1,7 @@
 import { isValidSrcRect } from '../surfaces/model';
-import { FULL_RECT, type SrcRect, type Surface } from '../surfaces/types';
-import { GRID, buildTopology, scaleUvs, warpedPositions } from '../warp/mesh';
+import { FULL_RECT, shapeOf, type FaceShape, type SrcRect, type Surface } from '../surfaces/types';
+import { GRID, buildTopology, frameCoords, scaleUvs, warpedPositions } from '../warp/mesh';
+import { meshMargin } from '../warp/shape';
 import { UNIT_CORNERS, type Corners } from '../warp/types';
 
 type F32 = Float32Array<ArrayBuffer>;
@@ -8,6 +9,8 @@ type F32 = Float32Array<ArrayBuffer>;
 export interface SurfaceBuffers {
   positions: F32;
   uvs: F32;
+  /** Per vertex [frameX, frameY, shapeId]: what the fragment shader cuts the shape out of. */
+  frame: F32;
 }
 
 export interface SyncResult {
@@ -19,6 +22,8 @@ export interface SyncResult {
   changedPositions: string[];
   /** Faces whose UV buffer must be re-uploaded. */
   changedUvs: string[];
+  /** Faces whose frame-coordinate buffer must be re-uploaded (always includes every created face). */
+  changedFrames: string[];
   /** Draw order (list order). */
   order: string[];
 }
@@ -27,6 +32,9 @@ interface Entry extends SurfaceBuffers {
   /** Last requested values, so an unchanged or repeatedly invalid request costs nothing. */
   wantCorners: Corners;
   wantRect: SrcRect;
+  wantShape: FaceShape;
+  /** The shape the buffers were last built for (its margin shapes positions and UVs). */
+  builtShape: FaceShape;
 }
 
 const same = (a: readonly number[], b: readonly number[]) => a[0] === b[0] && a[1] === b[1];
@@ -47,8 +55,19 @@ const cloneCorners = (c: Corners): Corners => ({
  */
 export class SurfaceSync {
   private entries = new Map<string, Entry>();
-  private baseUvs = buildTopology().uvs;
-  private floats = this.baseUvs.length;
+  /** Base UV grids by margin: quads use the plain 0..1 grid, shaped faces the one that reaches past the frame. */
+  private baseUvs = new Map<number, Float32Array>();
+  private floats = buildTopology().uvs.length;
+
+  private base(shape: FaceShape): Float32Array {
+    const margin = meshMargin(shape);
+    let b = this.baseUvs.get(margin);
+    if (!b) {
+      b = buildTopology(GRID, GRID, margin).uvs;
+      this.baseUvs.set(margin, b);
+    }
+    return b;
+  }
 
   buffers(id: string): SurfaceBuffers | undefined {
     return this.entries.get(id);
@@ -60,6 +79,7 @@ export class SurfaceSync {
       created: [],
       changedPositions: [],
       changedUvs: [],
+      changedFrames: [],
       order: surfaces.map((s) => s.id),
     };
     const present = new Set(result.order);
@@ -76,17 +96,35 @@ export class SurfaceSync {
         result.created.push(s.id);
         result.changedPositions.push(s.id);
         result.changedUvs.push(s.id);
+        result.changedFrames.push(s.id);
         continue;
       }
-      if (!sameCorners(existing.wantCorners, s.corners)) {
+      const shape = shapeOf(s);
+      const cornersChanged = !sameCorners(existing.wantCorners, s.corners);
+      const shapeChanged = existing.wantShape !== shape;
+      if (cornersChanged || shapeChanged) {
         existing.wantCorners = cloneCorners(s.corners);
-        if (warpedPositions(s.corners, GRID, GRID, existing.positions)) result.changedPositions.push(s.id);
+        existing.wantShape = shape;
+        // A frame with no valid warp freezes the whole face (positions, UVs and frame stay consistent).
+        if (warpedPositions(s.corners, GRID, GRID, existing.positions, meshMargin(shape))) {
+          result.changedPositions.push(s.id);
+          if (shape !== existing.builtShape) {
+            existing.builtShape = shape;
+            frameCoords(GRID, GRID, meshMargin(shape), shape, existing.frame);
+            result.changedFrames.push(s.id);
+            if (isValidSrcRect(s.srcRect)) {
+              scaleUvs(this.base(shape), s.srcRect, existing.uvs);
+              existing.wantRect = { ...s.srcRect };
+              result.changedUvs.push(s.id);
+            }
+          }
+        }
       }
       if (!sameRect(existing.wantRect, s.srcRect)) {
         existing.wantRect = { ...s.srcRect };
         if (isValidSrcRect(s.srcRect)) {
-          scaleUvs(this.baseUvs, s.srcRect, existing.uvs);
-          result.changedUvs.push(s.id);
+          scaleUvs(this.base(existing.builtShape), s.srcRect, existing.uvs);
+          if (!result.changedUvs.includes(s.id)) result.changedUvs.push(s.id);
         }
       }
     }
@@ -94,11 +132,14 @@ export class SurfaceSync {
   }
 
   private create(s: Surface): Entry {
+    const shape = shapeOf(s);
+    const margin = meshMargin(shape);
     const positions = new Float32Array(this.floats);
     // An invalid quad on a brand-new face falls back to the full-canvas quad, never garbage.
-    if (!warpedPositions(s.corners, GRID, GRID, positions)) warpedPositions(UNIT_CORNERS, GRID, GRID, positions);
+    if (!warpedPositions(s.corners, GRID, GRID, positions, margin)) warpedPositions(UNIT_CORNERS, GRID, GRID, positions, margin);
     const uvs = new Float32Array(this.floats);
-    scaleUvs(this.baseUvs, isValidSrcRect(s.srcRect) ? s.srcRect : FULL_RECT, uvs);
-    return { positions, uvs, wantCorners: cloneCorners(s.corners), wantRect: { ...s.srcRect } };
+    scaleUvs(this.base(shape), isValidSrcRect(s.srcRect) ? s.srcRect : FULL_RECT, uvs);
+    const frame = frameCoords(GRID, GRID, margin, shape) as F32;
+    return { positions, uvs, frame, wantCorners: cloneCorners(s.corners), wantRect: { ...s.srcRect }, wantShape: shape, builtShape: shape };
   }
 }
