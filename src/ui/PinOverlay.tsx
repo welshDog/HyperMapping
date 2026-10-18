@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type MutableRefObject, type PointerEvent } from 'react';
 import { CORNER_KEYS, gluedGroup, type CornerKey, type PinRef } from '../surfaces/glue';
 import { surfaceColor } from '../surfaces/model';
-import type { Surface } from '../surfaces/types';
+import { shapeOutlinePoints } from '../surfaces/outline';
+import { shapeOf, type Surface } from '../surfaces/types';
 import { clampCorner } from '../warp/quad';
 import type { Vec2 } from '../warp/types';
 import { createPointerGate } from './pointer-gate';
@@ -33,6 +34,7 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
   const rings = useRef<Partial<Record<CornerKey, SVGCircleElement | null>>>({});
   const dots = useRef<Record<string, SVGCircleElement | null>>({});
   const outlines = useRef<Record<string, SVGPolygonElement | null>>({});
+  const shapeEls = useRef<Record<string, SVGPolygonElement | null>>({});
   const dragging = useRef<CornerKey | null>(null);
   // One drag at a time: the first finger down owns it; a second finger is ignored until it lifts.
   const gate = useRef(createPointerGate());
@@ -48,6 +50,15 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
         'points',
         CORNER_KEYS.map((k) => `${c[k][0] * rect.width},${c[k][1] * rect.height}`).join(' '),
       );
+      const shapeEl = shapeEls.current[s.id];
+      if (shapeEl) {
+        shapeEl.setAttribute(
+          'points',
+          shapeOutlinePoints(shapeOf(s), c)
+            .map(([px, py]) => `${px * rect.width},${py * rect.height}`)
+            .join(' '),
+        );
+      }
       for (const k of CORNER_KEYS) {
         const x = String(c[k][0] * rect.width);
         const y = String(c[k][1] * rect.height);
@@ -137,7 +148,7 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
             fill="none"
             strokeWidth={2}
             strokeDasharray="6 4"
-            style={{ stroke: surfaceColor(i), opacity: 0.45 }}
+            style={{ stroke: surfaceColor(i), opacity: shapeOf(s) === 'quad' ? 0.45 : 0.25 }}
           />
         ),
       )}
@@ -148,8 +159,30 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
             outlines.current[selectedId] = el;
           }}
           strokeWidth={2.5}
-          style={{ stroke: selectedColor, fill: `${selectedColor}22` }}
+          strokeDasharray={shapeOf(list[selectedIndex]) === 'quad' ? undefined : '6 4'}
+          style={{
+            stroke: selectedColor,
+            fill: shapeOf(list[selectedIndex]) === 'quad' ? `${selectedColor}22` : 'none',
+            opacity: shapeOf(list[selectedIndex]) === 'quad' ? 1 : 0.6,
+          }}
         />
+      )}
+      {/* The cut-out shape itself (triangle, circle), drawn inside the dashed frame. */}
+      {list.map((s, i) =>
+        shapeOf(s) === 'quad' ? null : (
+          <polygon
+            key={`shape-${s.id}`}
+            ref={(el) => {
+              shapeEls.current[s.id] = el;
+            }}
+            strokeWidth={s.id === selectedId ? 3 : 2}
+            style={{
+              stroke: surfaceColor(i),
+              fill: s.id === selectedId ? `${surfaceColor(i)}22` : 'none',
+              opacity: s.id === selectedId ? 1 : 0.6,
+            }}
+          />
+        ),
       )}
       {list.flatMap((s, i) =>
         s.id === selectedId

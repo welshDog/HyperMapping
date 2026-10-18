@@ -8,8 +8,8 @@ import { DEMO_FILE_NAME, demoVideoUrl } from '../sources/demo';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
-import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove } from '../surfaces/model';
-import { FULL_RECT, type SrcRect, type Surface } from '../surfaces/types';
+import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape } from '../surfaces/model';
+import { FULL_RECT, shapeOf, type FaceShape, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import { createAutosaver } from '../setups/autosave';
 import { getBrowserStore } from '../setups/browser-store';
@@ -290,11 +290,19 @@ export function Editor() {
     if (onCornersChange(selectedId, defaultCorners(index, list.length))) setRepaint((n) => n + 1);
   };
 
-  const addFace = () => {
-    const next = addSurface(surfacesRef.current);
+  const addFace = (shape: FaceShape) => {
+    const next = addSurface(surfacesRef.current, shape);
     if (next === surfacesRef.current) return;
     publish(next);
     setSelectedId(next[next.length - 1].id);
+    bump();
+  };
+
+  const setShape = (shape: FaceShape) => {
+    const next = setSurfaceShape(surfacesRef.current, selectedId, shape);
+    if (next === surfacesRef.current) return;
+    publish(next);
+    setRepaint((n) => n + 1); // the overlay outline must follow the new shape
     bump();
   };
 
@@ -462,7 +470,12 @@ export function Editor() {
               setSelectedId(id);
               bump();
             }}
+            selectedShape={(() => {
+              const sel = surfacesRef.current.find((f) => f.id === selectedId);
+              return sel ? shapeOf(sel) : 'quad';
+            })()}
             onAdd={addFace}
+            onSetShape={setShape}
             onDelete={deleteFace}
             onEditSlice={() => setSliceMode(true)}
           />
