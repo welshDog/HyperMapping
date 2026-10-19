@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { beatTargets, carryToHeirs, lookHandovers, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
+import { lookRenderSize } from '../generator/budget';
 import { createLookPool, type LookPool } from '../generator/pool';
 import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { newLookSettings as freshLookSettings, settingsFromState, type LookSettings } from '../generator/settings';
@@ -59,8 +60,11 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
       setState: (owner, state) => inner.setState(owner, state),
       setActive: (owners) => {
         visibleRef.current = owners;
+        const { w, h } = lookRenderSize(owners.size); // fewer pixels per look when 3-4 are showing
+        inner.setSize(w, h); // before setActive, so a look switched on draws its first frame at the final size
         inner.setActive(owners);
       },
+      setSize: (w, h) => inner.setSize(w, h),
       setAudio: (levels) => inner.setAudio(levels),
       video: (owner) => inner.video(owner),
       ensurePlaying: () => inner.ensurePlaying(),

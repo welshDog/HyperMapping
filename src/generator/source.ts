@@ -37,6 +37,11 @@ export interface GeneratorSource {
   setAudio(levels: { bass: number; treble: number; vol: number }): void;
   /** Only draw while the generator is on AND active (default true): false when another source is showing. */
   setActive(active: boolean): void;
+  /**
+   * Resize the hidden canvas (and the viewport / `u_res`). No-op when unchanged; draws a frame at once after a
+   * real resize (resizing clears the canvas) so the stream never shows a black frame.
+   */
+  setSize(w: number, h: number): void;
   /** Restart the stream if the browser paused it (backgrounded tab). */
   ensurePlaying(): void;
   /** Stop the loop, free the GL objects and the context, drop the video. Safe to call twice. */
@@ -167,6 +172,8 @@ export function createGeneratorSource(): GeneratorSource | null {
     const cheap = prefersCheapMode();
     const octaves = cheap ? CHEAP_OCTAVES : FULL_OCTAVES;
     let state: GeneratorState | null = null;
+    let width = GENERATOR_WIDTH;
+    let height = GENERATOR_HEIGHT;
     let lastDrawAt = -Infinity;
     let failures = 0;
     let lastWarnAt = -Infinity;
@@ -194,10 +201,10 @@ export function createGeneratorSource(): GeneratorSource | null {
       const { prev, cur, fade } = currentLook(s, now);
       const curU = lookUniforms(cur);
       const prevU = prev ? lookUniforms(prev) : curU;
-      g.viewport(0, 0, GENERATOR_WIDTH, GENERATOR_HEIGHT);
+      g.viewport(0, 0, width, height);
       g.useProgram(p.program);
       g.bindVertexArray(p.vao);
-      g.uniform2f(p.loc.u_res, GENERATOR_WIDTH, GENERATOR_HEIGHT);
+      g.uniform2f(p.loc.u_res, width, height);
       g.uniform1f(p.loc.u_time, shaderTime(s, now));
       g.uniform1f(p.loc.u_fade, prev ? fade : 1);
       g.uniform1f(p.loc.u_pulse, sound.pulse);
@@ -301,6 +308,16 @@ export function createGeneratorSource(): GeneratorSource | null {
           stopLoop();
           audioClock.idle();
         }
+      },
+      setSize: (w, h) => {
+        const nw = Math.round(w);
+        const nh = Math.round(h);
+        if (disposed || !canvas || nw < 1 || nh < 1 || (nw === width && nh === height)) return;
+        width = nw;
+        height = nh;
+        canvas.width = nw; // clears the drawing buffer: redraw straight away
+        canvas.height = nh;
+        if (wantsFrames()) drawNow();
       },
       ensurePlaying: () => {
         if (!disposed) ensurePlaying();

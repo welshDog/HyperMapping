@@ -8,6 +8,7 @@ interface Fake extends LookSource {
   audio: { bass: number; treble: number; vol: number }[];
   actives: boolean[];
   disposed: number;
+  sizes: [number, number][];
 }
 
 function makeFake(): Fake {
@@ -17,10 +18,12 @@ function makeFake(): Fake {
     audio: [],
     actives: [],
     disposed: 0,
+    sizes: [],
     video: { tag: 'video' } as unknown as HTMLVideoElement,
     setState: (s) => void f.states.push(s),
     setAudio: (l) => void f.audio.push(l),
     setActive: (a) => void f.actives.push(a),
+    setSize: (w, h) => void f.sizes.push([w, h]),
     ensurePlaying: () => void f.calls.push('play'),
     dispose: () => void f.disposed++,
   };
@@ -168,5 +171,39 @@ describe('rekey', () => {
     expect(pool.video('b')).toBe(made[1].video);
     pool.rekey('a', 'a');
     expect(pool.hasSource('a')).toBe(true);
+  });
+});
+
+describe('setSize', () => {
+  it('reaches every existing source', () => {
+    const { made, pool } = setup();
+    pool.sync(['a', 'b']);
+    pool.setSize(640, 360);
+    expect(made.map((f) => f.sizes)).toEqual([[[640, 360]], [[640, 360]]]);
+  });
+  it('reaches sources created later, once, and not before any size was set', () => {
+    const { made, pool } = setup();
+    pool.sync(['a']);
+    expect(made[0].sizes).toEqual([]);
+    pool.setSize(640, 360);
+    pool.sync(['a', 'b']);
+    expect(made[1].sizes).toEqual([[640, 360]]);
+    expect(made[0].sizes).toEqual([[640, 360]]);
+  });
+  it('a later size replaces the remembered one; repeats are harmless', () => {
+    const { made, pool } = setup();
+    pool.setSize(640, 360);
+    pool.setSize(640, 360);
+    pool.setSize(960, 540);
+    pool.sync(['a']);
+    expect(made[0].sizes).toEqual([[960, 540]]);
+    expect(() => pool.setSize(960, 540)).not.toThrow();
+  });
+  it('a rekeyed source keeps working', () => {
+    const { made, pool } = setup();
+    pool.sync(['a']);
+    pool.rekey('a', 's');
+    pool.setSize(640, 360);
+    expect(made[0].sizes).toEqual([[640, 360]]);
   });
 });

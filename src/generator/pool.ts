@@ -3,7 +3,7 @@ import type { GeneratorState } from './shuffle';
 
 export type LookSource = Pick<
   GeneratorSource,
-  'video' | 'setState' | 'setAudio' | 'setActive' | 'ensurePlaying' | 'dispose'
+  'video' | 'setState' | 'setAudio' | 'setActive' | 'setSize' | 'ensurePlaying' | 'dispose'
 >;
 
 type Audio = { bass: number; treble: number; vol: number };
@@ -25,6 +25,8 @@ export interface LookPool {
   /** Listed owners get setActive(true), every other source false. */
   setActive(owners: ReadonlySet<string>): void;
   setAudio(levels: Audio): void;
+  /** Render size for every source, current and later ones (a no-op for a source already at that size). */
+  setSize(w: number, h: number): void;
   video(owner: string): HTMLVideoElement | null;
   ensurePlaying(): void;
   dispose(): void;
@@ -36,6 +38,7 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
   const states = new Map<string, GeneratorState>();
   let audio: Audio | null = null;
   let activeSet: ReadonlySet<string> | null = null;
+  let size: { w: number; h: number } | null = null; // none until set: sources keep their default size
   let available = true;
 
   return {
@@ -63,6 +66,7 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
         const state = states.get(owner);
         if (state) src.setState(state);
         if (audio) src.setAudio(audio);
+        if (size) src.setSize(size.w, size.h);
         if (activeSet) src.setActive(activeSet.has(owner));
       }
     },
@@ -88,6 +92,10 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
     setAudio(levels) {
       audio = levels;
       for (const src of sources.values()) src.setAudio(levels);
+    },
+    setSize(w, h) {
+      size = { w, h };
+      for (const src of sources.values()) src.setSize(w, h);
     },
     video: (owner) => sources.get(owner)?.video ?? null,
     ensurePlaying() {

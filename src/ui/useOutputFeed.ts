@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { lookRenderSize } from '../generator/budget';
 import { createGeneratorSource } from '../generator/source';
 import { createLookPool, type LookPool } from '../generator/pool';
 import { lookHandovers, type LookStates } from '../generator/looks';
@@ -107,7 +108,10 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         patternAvailable: pattern !== null,
         generatorAvailable: (owner) => pool.hasSource(owner),
       });
-      pool.setActive(visibleLookOwners(resolved));
+      const visible = visibleLookOwners(resolved);
+      const { w, h } = lookRenderSize(visible.size);
+      pool.setSize(w, h); // before setActive: a look switched on draws its first frame at the final size
+      pool.setActive(visible);
       const videos = new Map<string, HTMLVideoElement | null>();
       for (const [id, ref] of resolved) {
         videos.set(
