@@ -7,7 +7,7 @@ import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../sources/resolve';
 import { canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
-import { SNAP_RADIUS_PX, applyCornersById, moveGluedPin, type PinRef } from '../surfaces/glue';
+import { SNAP_RADIUS_PX, applyCornersById, moveFaceBy, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape, slicesAfterSourceChange } from '../surfaces/model';
 import { FULL_RECT, shapeOf, sourceOf, type FaceShape, type FaceSource, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
@@ -263,6 +263,22 @@ export function Editor() {
     [glue, publish],
   );
 
+  /**
+   * The body of a face was grabbed and dragged by `delta` (unit space, since the grab began). Computed from the
+   * layout at grab start like a pin drag, so toggling Glue mid-drag returns neighbours to their start positions;
+   * only corners are written back. Glue on: glued neighbours follow; glue off: only this face moves.
+   */
+  const onGrabMove = useCallback(
+    (faceId: string, delta: Vec2) => {
+      const base = dragBaseRef.current ?? surfacesRef.current;
+      const next = moveFaceBy(base, faceId, delta, { glue });
+      if (!next) return false;
+      publish(applyCornersById(surfacesRef.current, next));
+      return true;
+    },
+    [glue, publish],
+  );
+
   const resetFace = () => {
     const list = surfacesRef.current;
     const index = list.findIndex((s) => s.id === selectedId);
@@ -493,6 +509,11 @@ export function Editor() {
           surfacesRef={surfacesRef}
           selectedId={selectedId}
           onPinMove={onPinMove}
+          onGrabMove={onGrabMove}
+          onSelectFace={(id) => {
+            setSelectedId(id);
+            bump();
+          }}
           onPinDragStart={() => {
             dragBaseRef.current = surfacesRef.current;
           }}

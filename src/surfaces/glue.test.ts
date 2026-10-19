@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_BOX, DEFAULT_PROJECTOR } from '../sim/defaults';
 import { solveFaces, toSurfaces } from '../sim/solve';
 import type { Corners } from '../warp/types';
-import { CORNER_KEYS, GLUE_EPS, applyCornersById, SNAP_RADIUS_PX, gluedGroup, moveGluedPin, movePins, snapTarget, type PinRef } from './glue';
+import { CORNER_KEYS, GLUE_EPS, applyCornersById, moveFaceBy, SNAP_RADIUS_PX, gluedGroup, moveGluedPin, movePins, snapTarget, type PinRef } from './glue';
 import { FULL_RECT, type Surface } from './types';
 
 const sq = (x0: number, y0: number, x1: number, y1: number): Corners => ({
@@ -284,5 +284,65 @@ describe('applyCornersById', () => {
     applyCornersById(current, moved);
     expect(current).toEqual(before);
     expect(moved).toEqual(movedBefore);
+  });
+});
+
+describe('moveFaceBy (grab a whole shape)', () => {
+  it('Glue off: moves only the grabbed face by the delta; a shared edge separates (the glue breaks)', () => {
+    const out = moveFaceBy([A, B, C], 'a', [0.05, 0.1], { glue: false })!;
+    expect(out[0].corners.tl[0]).toBeCloseTo(0.15, 12);
+    expect(out[0].corners.tl[1]).toBeCloseTo(0.3, 12);
+    expect(out[0].corners.tr[0]).toBeCloseTo(0.55, 12);
+    expect(out[0].corners.tr[1]).toBeCloseTo(0.3, 12);
+    expect(out[1]).toBe(B); // B untouched: it keeps its corners, so A.tr no longer sits on B.tl
+    expect(out[2]).toBe(C);
+    expect(gluedGroup(out, pin('a', 'tr')).length).toBe(1);
+  });
+  it('Glue on: pins glued to the face move with it, so the join stays joined', () => {
+    const out = moveFaceBy([A, B, C], 'a', [0.05, 0.1], { glue: true })!;
+    expect(out[1].corners.tl[0]).toBeCloseTo(0.55, 12);
+    expect(out[1].corners.tl[1]).toBeCloseTo(0.3, 12);
+    expect(out[1].corners.bl[0]).toBeCloseTo(0.55, 12);
+    expect(out[1].corners.bl[1]).toBeCloseTo(0.9, 12);
+    expect(out[1].corners.tr).toEqual(B.corners.tr); // B's far corners stay
+    expect(out[2]).toBe(C);
+    expect(gluedGroup(out, pin('a', 'tr')).length).toBe(2);
+  });
+  it('stops at the canvas edge instead of squashing: the delta is limited per axis', () => {
+    const out = moveFaceBy([A], 'a', [-0.5, 0.5], { glue: false })!;
+    expect(out[0].corners.tl[0]).toBeCloseTo(0, 12); // A.tl.x was 0.1: limited to 0
+    expect(out[0].corners.bl[1]).toBeCloseTo(1, 12); // A.bl.y was 0.8: limited to 1
+    expect(out[0].corners.tr[0] - out[0].corners.tl[0]).toBeCloseTo(0.4, 12); // same size
+  });
+  it('a pin already outside the canvas may move back in but not further out', () => {
+    const wide = face('w', { tl: [-0.2, 0.2], tr: [0.6, 0.2], br: [0.6, 0.8], bl: [-0.2, 0.8] });
+    const further = moveFaceBy([wide], 'w', [-0.3, 0], { glue: false })!;
+    expect(further[0].corners.tl[0]).toBeCloseTo(-0.2, 12);
+    const back = moveFaceBy([wide], 'w', [0.1, 0], { glue: false })!;
+    expect(back[0].corners.tl[0]).toBeCloseTo(-0.1, 12);
+  });
+  it('returns the same list when the delta is zero or fully blocked, and null for an unknown face or a non-finite delta', () => {
+    const list = [A, B, C];
+    expect(moveFaceBy(list, 'a', [0, 0], { glue: true })).toBe(list);
+    const edge = face('e', sq(0, 0, 0.3, 0.3));
+    expect(moveFaceBy([edge], 'e', [-0.2, -0.2], { glue: false })).toEqual([edge]);
+    expect(moveFaceBy(list, 'zzz', [0.1, 0.1], { glue: true })).toBeNull();
+    expect(moveFaceBy(list, 'a', [NaN, 0], { glue: true })).toBeNull();
+  });
+  it('refuses the whole move when a glued neighbour would become an invalid shape', () => {
+    // D shares only its top-left corner with A.br; moving A far enough drags D.tl past D's own far corners.
+    const D = face('d', sq(0.5, 0.8, 0.9, 0.95));
+    const list = [A, D];
+    expect(moveFaceBy(list, 'a', [0.45, 0.14], { glue: true })).toBeNull();
+    // the same move without glue only moves A, which stays valid
+    expect(moveFaceBy(list, 'a', [0.45, 0.14], { glue: false })).not.toBeNull();
+  });
+  it('does not mutate its input and keeps non-corner fields', () => {
+    const shaped: Surface = { ...A, shape: 'circle', source: 'look', look: undefined as never };
+    const before = clone([shaped, B]);
+    const out = moveFaceBy([shaped, B], 'a', [0.05, 0.05], { glue: true })!;
+    expect(clone([shaped, B])).toEqual(before);
+    expect(out[0].shape).toBe('circle');
+    expect(out[0].srcRect).toBe(shaped.srcRect);
   });
 });
