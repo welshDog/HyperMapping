@@ -7,7 +7,7 @@ import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../sources/resolve';
 import { canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
-import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
+import { SNAP_RADIUS_PX, applyCornersById, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape, slicesAfterSourceChange } from '../surfaces/model';
 import { FULL_RECT, shapeOf, sourceOf, type FaceShape, type FaceSource, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
@@ -248,14 +248,16 @@ export function Editor() {
    * previous move's result: the snap then holds while the pointer is inside the radius and releases
    * when it leaves, the target pin is never dragged along by a fly-by (once snapped it would count as
    * glued), and toggling Glue mid-drag returns partners to their start positions. A refused move
-   * returns false, so the pin stays at its last accepted spot. Accepted rare case: a layout change
-   * from elsewhere during a drag (e.g. a simulator `layout` message) is overwritten by the next move.
+   * returns false, so the pin stays at its last accepted spot. Only the CORNERS of that result are
+   * written back, by face id, onto the current list: a source or look change made during the drag (a
+   * shuffle, a beat, Randomize) is kept. Accepted rare case: a corner change from elsewhere during a
+   * drag (e.g. a simulator `layout` message) is overwritten by the next move.
    */
   const onPinMove = useCallback(
     (ref: PinRef, p: Vec2, size: { w: number; h: number }) => {
       const next = moveGluedPin(dragBaseRef.current ?? surfacesRef.current, ref, p, { glue, radiusPx: SNAP_RADIUS_PX, size });
       if (!next) return false;
-      publish(next);
+      publish(applyCornersById(surfacesRef.current, next));
       return true;
     },
     [glue, publish],

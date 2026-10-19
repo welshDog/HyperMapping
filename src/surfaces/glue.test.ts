@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_BOX, DEFAULT_PROJECTOR } from '../sim/defaults';
 import { solveFaces, toSurfaces } from '../sim/solve';
 import type { Corners } from '../warp/types';
-import { CORNER_KEYS, GLUE_EPS, SNAP_RADIUS_PX, gluedGroup, moveGluedPin, movePins, snapTarget, type PinRef } from './glue';
+import { CORNER_KEYS, GLUE_EPS, applyCornersById, SNAP_RADIUS_PX, gluedGroup, moveGluedPin, movePins, snapTarget, type PinRef } from './glue';
 import { FULL_RECT, type Surface } from './types';
 
 const sq = (x0: number, y0: number, x1: number, y1: number): Corners => ({
@@ -246,5 +246,43 @@ describe('glue and per-face sources', () => {
     expect(out[0].look).toEqual(look);
     expect('source' in out[1]).toBe(false);
     expect('look' in out[1]).toBe(false);
+  });
+});
+
+describe('applyCornersById', () => {
+  const look = { look: { style: 'neon' as const, seed: 4 }, speed: 1, shuffleSec: 0 as const, stylePick: 'auto' as const };
+  it('keeps a look/source change made in `current` after the drag base was taken', () => {
+    const base = [A, B];
+    const moved = moveGluedPin(base, pin('a', 'tl'), [0.12, 0.22], { glue: true, radiusPx: SNAP_RADIUS_PX, size: SIZE })!;
+    const current = [{ ...A, source: 'look' as const, look }, { ...B, source: 'pattern' as const }];
+    const out = applyCornersById(current, moved);
+    expect(out[0].look).toEqual(look);
+    expect(out[0].source).toBe('look');
+    expect(out[1].source).toBe('pattern');
+    expect(out[0].corners.tl).toEqual([0.12, 0.22]);
+    expect(out[1]).toBe(current[1]); // its corners did not change
+  });
+  it('applies the corners of every moved face (glued partners too)', () => {
+    const moved = movePins([A, B], [pin('a', 'tr'), pin('b', 'tl')], [0.55, 0.25])!;
+    const out = applyCornersById([A, B], moved);
+    expect(out[0].corners.tr).toEqual([0.55, 0.25]);
+    expect(out[1].corners.tl).toEqual([0.55, 0.25]);
+  });
+  it('ignores faces missing from either list', () => {
+    const moved = movePins([A, B], [pin('b', 'br')], [0.85, 0.75])!;
+    const current = [A, C]; // b was deleted meanwhile, c added
+    const out = applyCornersById(current, moved);
+    expect(out).toBe(current);
+    expect(out.map((f) => f.id)).toEqual(['a', 'c']);
+  });
+  it('returns the same reference when no corners differ, and mutates nothing', () => {
+    const current = [A, B];
+    expect(applyCornersById(current, [clone(A), clone(B)])).toBe(current);
+    const before = clone(current);
+    const moved = movePins([A, B], [pin('a', 'bl')], [0.15, 0.75])!;
+    const movedBefore = clone(moved);
+    applyCornersById(current, moved);
+    expect(current).toEqual(before);
+    expect(moved).toEqual(movedBefore);
   });
 });

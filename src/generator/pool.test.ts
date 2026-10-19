@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLookPool, type LookSource } from './pool';
+import { createLookPool, ownersChanged, type LookSource } from './pool';
 import type { GeneratorState } from './shuffle';
 
 interface Fake extends LookSource {
@@ -205,5 +205,18 @@ describe('setSize', () => {
     pool.rekey('a', 's');
     pool.setSize(640, 360);
     expect(made[0].sizes).toEqual([[640, 360]]);
+  });
+});
+
+describe('ownersChanged', () => {
+  it('is true before any sync and when the set of owners differs', () => {
+    expect(ownersChanged(null, [])).toBe(true);
+    expect(ownersChanged(['a'], ['a', 'b'])).toBe(true);
+    expect(ownersChanged(['a', 'b'], ['a', 'c'])).toBe(true);
+    expect(ownersChanged(['a'], [])).toBe(true);
+  });
+  it('is false for the same owners in any order', () => {
+    expect(ownersChanged([], [])).toBe(false);
+    expect(ownersChanged(['a', 'b'], ['b', 'a'])).toBe(false);
   });
 });

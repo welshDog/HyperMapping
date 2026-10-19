@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { beatTargets, carryToHeirs, lookHandovers, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
 import { lookRenderSize } from '../generator/budget';
-import { createLookPool, type LookPool } from '../generator/pool';
+import { createLookPool, ownersChanged, type LookPool } from '../generator/pool';
 import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { newLookSettings as freshLookSettings, settingsFromState, type LookSettings } from '../generator/settings';
 import { randomizeState, type GeneratorState } from '../generator/shuffle';
@@ -20,9 +20,6 @@ interface Args {
   /** The Editor's "work out what every face shows" step. */
   applySourcesRef: MutableRefObject<() => void>;
 }
-
-const sameKeys = (a: readonly string[] | null, b: readonly string[]) =>
-  a !== null && a.length === b.length && a.every((k, i) => k === b[i]);
 
 /**
  * The Editor's live looks: one runtime `GeneratorState` per look-owning face (keyed by its id), one
@@ -82,7 +79,7 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
    */
   const syncPool = useCallback(() => {
     const owners = rendererRef.current ? Object.keys(looksRef.current) : [];
-    if (!sameKeys(syncedRef.current, owners)) {
+    if (ownersChanged(syncedRef.current, owners)) {
       pool.sync(owners);
       syncedRef.current = owners;
       for (const id of [...sentRef.current.keys()]) if (!owners.includes(id)) sentRef.current.delete(id);

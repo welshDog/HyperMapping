@@ -122,3 +122,24 @@ export function moveGluedPin(
   // pointer is inside its radius: fall back to the raw pointer position once.
   return movePins(surfaces, group, snapped) ?? movePins(surfaces, group, p);
 }
+
+const sameCorners = (a: Corners, b: Corners) =>
+  CORNER_KEYS.every((k) => a[k][0] === b[k][0] && a[k][1] === b[k][1]);
+
+/**
+ * Write the corners of `moved` (a pin move computed from an older layout, e.g. the drag start) onto the
+ * matching faces of `current`, by id. Every other field (source, look, sharing, shape, slice) comes from
+ * `current`. Ids missing from either list are ignored. `current` itself comes back when no corners differ.
+ * Inputs are never mutated.
+ */
+export function applyCornersById(current: Surface[], moved: Surface[]): Surface[] {
+  const byId = new Map(moved.map((s) => [s.id, s.corners]));
+  let changed = false;
+  const out = current.map((s) => {
+    const corners = byId.get(s.id);
+    if (!corners || sameCorners(s.corners, corners)) return s;
+    changed = true;
+    return { ...s, corners: { tl: corners.tl, tr: corners.tr, br: corners.br, bl: corners.bl } };
+  });
+  return changed ? out : current;
+}

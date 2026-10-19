@@ -105,7 +105,7 @@ Each face can show its own thing. Pick a face tab, then use the **Source** row u
 - The toolbar **Test pattern** button still puts the pattern on **every** face at once (for lining up). It is not saved; switch it off and each face goes back to its own source.
 - Sound: there is **one microphone** for everything. Listen/Stop, Sensitivity and the tick boxes stay in the Sound section and drive every look the same way.
 - If no video is loaded, a Video face shows the test pattern. If the browser cannot make the visuals, a look face shows the video (or the test pattern) instead, and the panel says so.
-- Setups, Export/Import and the remembered layout keep each face's source and look. The Output window and the simulator show the same per-face picture as the Editor.
+- Setups, Export/Import and the remembered layout keep each face's source and look. The Output window and the simulator should show the same per-face picture as the Editor (not yet checked on real devices, see below).
 - With 3 or 4 looks running, each look is drawn smaller (640x360 instead of 960x540) so four stay smooth; you may notice slightly softer visuals.
 
 ## Saving your setup

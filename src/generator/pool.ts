@@ -108,3 +108,15 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
     },
   };
 }
+
+/**
+ * Should the pool be synced again? True before the first sync (`last` null) and whenever the set of owner
+ * ids differs (order ignored). Callers sync only then, so a generator factory that fails is retried when
+ * the owners change, not on every message or pin-drag move.
+ */
+export function ownersChanged(last: readonly string[] | null, next: readonly string[]): boolean {
+  if (last === null || last.length !== next.length) return true;
+  const a = [...last].sort();
+  const b = [...next].sort();
+  return a.some((id, i) => id !== b[i]);
+}

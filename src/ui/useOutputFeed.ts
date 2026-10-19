@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { lookRenderSize } from '../generator/budget';
 import { createGeneratorSource } from '../generator/source';
-import { createLookPool, type LookPool } from '../generator/pool';
+import { createLookPool, ownersChanged, type LookPool } from '../generator/pool';
 import { lookHandovers, type LookStates } from '../generator/looks';
 import { sameSettings, settingsFromState, stateFromSettings } from '../generator/settings';
 import type { GeneratorState } from '../generator/shuffle';
@@ -65,6 +65,14 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     poolRef.current = pool;
     const sent = new Map<string, GeneratorState>(); // what the pool already holds, by owner
     const fallback = new Map<string, GeneratorState>(); // states built here for owners the Editor has not described yet
+    // Owner ids of the last pool.sync (null: never synced). The pool is only synced when they change, so a
+    // generator factory that fails is retried when the owners change, not on every message (~60/s in a drag).
+    let synced: string[] | null = null;
+    const syncPool = (ids: string[]) => {
+      if (!ownersChanged(synced, ids)) return;
+      pool.sync(ids);
+      synced = ids;
+    };
 
     /** The one picture every face shows in uniform mode: pattern when forced, else video, else pattern. */
     const uniformVideo = (): HTMLVideoElement | null => {
@@ -76,7 +84,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     /** Work out what every face shows and hand the renderer the matching videos. */
     const apply = () => {
       if (uniformRef.current) {
-        pool.sync([]);
+        syncPool([]);
         sent.clear();
         fallback.clear();
         pool.setActive(new Set());
@@ -84,7 +92,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         return;
       }
       const owners = lookOwners(surfaces);
-      pool.sync(owners.map((f) => f.id));
+      syncPool(owners.map((f) => f.id));
       const ownerIds = new Set(owners.map((f) => f.id));
       for (const id of [...sent.keys()]) if (!ownerIds.has(id)) sent.delete(id);
       for (const id of [...fallback.keys()]) if (!ownerIds.has(id)) fallback.delete(id);
@@ -138,10 +146,13 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         else renderer.setSurfaces(msg.surfaces);
         // A sharer took over a look (its owner deleted or switched away): keep that look's generator
         // source, and its running state until the Editor's `looks` message names the new owner.
-        for (const { from, to } of lookHandovers(surfaces, msg.surfaces)) {
-          pool.rekey(from, to);
-          const running = Object.hasOwn(looks, from) ? looks[from] : fallback.get(from);
-          if (running) fallback.set(to, running);
+        // Only when the owners change (a hand-over always changes them), like the pool sync in `apply`.
+        if (ownersChanged(synced, lookOwners(msg.surfaces).map((f) => f.id))) {
+          for (const { from, to } of lookHandovers(surfaces, msg.surfaces)) {
+            pool.rekey(from, to);
+            const running = Object.hasOwn(looks, from) ? looks[from] : fallback.get(from);
+            if (running) fallback.set(to, running);
+          }
         }
         surfaces = msg.surfaces;
         apply();
