@@ -253,3 +253,61 @@ describe('face shapes in setups', () => {
     expect(parseSetupFile(JSON.stringify(ok))).toBeNull();
   });
 });
+
+describe('per-face sources in setups', () => {
+  const lookA = { look: { style: 'plasma' as const, seed: 7 }, speed: 1.5, shuffleSec: 30 as const, stylePick: 'auto' as const };
+  const lookB = { look: { style: 'plasma' as const, seed: 99 }, speed: 1, shuffleSec: 0 as const, stylePick: 'auto' as const };
+  /** s1 Video, s2 Pattern, s3 owns a look shared by s4 and s5. */
+  const mixed = (): Surface[] => {
+    const list = faces(5);
+    list[1] = { ...list[1], source: 'pattern' };
+    list[2] = { ...list[2], source: 'look', look: lookA };
+    list[3] = { ...list[3], source: 'look', lookOf: 's3' };
+    list[4] = { ...list[4], source: 'look', lookOf: 's3' };
+    return list;
+  };
+  const fields = (list: Surface[]) => list.map((s) => ({ source: s.source, look: s.look, lookOf: s.lookOf }));
+
+  it('export then import keeps every source, look and sharing link', () => {
+    const back = parseSetupFile(setupToFile({ name: 'Mixed', savedAt: 3, surfaces: mixed() }))!;
+    expect(fields(back.surfaces)).toEqual(fields(mixed()));
+    expect('source' in back.surfaces[0]).toBe(false);
+    expect('look' in back.surfaces[3]).toBe(false);
+  });
+  it('a saved setup keeps them too', () => {
+    const store = new MemStore();
+    expect(saveSetup(store, 'Mixed', mixed(), 4).ok).toBe(true);
+    expect(fields(listSetups(store)[0].surfaces)).toEqual(fields(mixed()));
+  });
+  it('autosave keeps them', () => {
+    const store = new MemStore();
+    expect(saveAutosave(store, mixed(), 5)).toBe(true);
+    expect(fields(loadAutosave(store)!)).toEqual(fields(mixed()));
+  });
+  it('a setup file written before per-face sources loads as all Video', () => {
+    const old = JSON.parse(setupToFile({ name: 'Old', savedAt: 1, surfaces: faces(3) }));
+    const back = parseSetupFile(JSON.stringify(old))!;
+    for (const s of back.surfaces) {
+      expect('source' in s).toBe(false);
+      expect('look' in s).toBe(false);
+      expect('lookOf' in s).toBe(false);
+    }
+  });
+  it('an imported file with 5 look owners loads with 4 owners and 1 Video face', () => {
+    const file = JSON.parse(setupToFile({ name: 'Many', savedAt: 1, surfaces: faces(5) }));
+    file.surfaces.forEach((s: Record<string, unknown>, i: number) => {
+      s.source = 'look';
+      s.look = { ...lookB, look: { style: 'plasma', seed: i + 1 } };
+    });
+    const back = parseSetupFile(JSON.stringify(file))!;
+    expect(back.surfaces.slice(0, 4).every((s) => s.source === 'look' && s.look !== undefined)).toBe(true);
+    const last = back.surfaces[4];
+    expect('source' in last).toBe(false);
+    expect('look' in last).toBe(false);
+  });
+  it("an imported file with source 'hologram' is rejected whole", () => {
+    const file = JSON.parse(setupToFile({ name: 'Bad', savedAt: 1, surfaces: mixed() }));
+    file.surfaces[0].source = 'hologram';
+    expect(parseSetupFile(JSON.stringify(file))).toBeNull();
+  });
+});

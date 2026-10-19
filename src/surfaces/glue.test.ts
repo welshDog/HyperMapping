@@ -233,3 +233,18 @@ describe('glue across shapes', () => {
     expect('shape' in out[1]).toBe(false);
   });
 });
+
+describe('glue and per-face sources', () => {
+  const look = { look: { style: 'plasma' as const, seed: 5 }, speed: 1, shuffleSec: 0 as const, stylePick: 'auto' as const };
+  const LA: Surface = { ...A, source: 'look', look };
+  const VB: Surface = { ...B }; // Video face: no source key
+  it('a pin shared by a look face and a Video face moves both and keeps their sources', () => {
+    const out = moveGluedPin([LA, VB], pin('a', 'tr'), [0.55, 0.25], { glue: true, radiusPx: SNAP_RADIUS_PX, size: SIZE })!;
+    expect(out[0].corners.tr).toEqual([0.55, 0.25]);
+    expect(out[1].corners.tl).toEqual([0.55, 0.25]);
+    expect(out[0].source).toBe('look');
+    expect(out[0].look).toEqual(look);
+    expect('source' in out[1]).toBe(false);
+    expect('look' in out[1]).toBe(false);
+  });
+});
