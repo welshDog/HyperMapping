@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { lookRenderSize } from '../generator/budget';
+import { chooseLookSize } from '../generator/budget';
 import { createGeneratorSource } from '../generator/source';
 import { createLookPool, ownersChanged, type LookPool } from '../generator/pool';
 import { lookHandovers, type LookStates } from '../generator/looks';
@@ -68,6 +68,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     // Owner ids of the last pool.sync (null: never synced). The pool is only synced when they change, so a
     // generator factory that fails is retried when the owners change, not on every message (~60/s in a drag).
     let synced: string[] | null = null;
+    let lookSize: { w: number; h: number } | null = null; // the look render size in use (hysteresis)
     const syncPool = (ids: string[]) => {
       if (!ownersChanged(synced, ids)) return;
       pool.sync(ids);
@@ -117,8 +118,8 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
         generatorAvailable: (owner) => pool.hasSource(owner),
       });
       const visible = visibleLookOwners(resolved);
-      const { w, h } = lookRenderSize(visible.size);
-      pool.setSize(w, h); // before setActive: a look switched on draws its first frame at the final size
+      lookSize = chooseLookSize(lookSize, visible.size);
+      pool.setSize(lookSize.w, lookSize.h); // before setActive: a look switched on draws its first frame at the final size
       pool.setActive(visible);
       const videos = new Map<string, HTMLVideoElement | null>();
       for (const [id, ref] of resolved) {

@@ -1,6 +1,6 @@
 # Per-face content: as built (2026-10-19)
 
-Design: `2026-10-18-per-face-content-design.md`. Plan: `../plans/2026-10-18-hypermapping-per-face-content.md`. Branch `feat/per-face-content` (not merged).
+Design: `2026-10-18-per-face-content-design.md`. Plan: `../plans/2026-10-18-hypermapping-per-face-content.md`. Merged to main with the grab feature (2026-10-19).
 
 ## What was built
 
@@ -13,7 +13,7 @@ Design: `2026-10-18-per-face-content-design.md`. Plan: `../plans/2026-10-18-hype
 - **Editor engine**: `useLooks` (`src/ui/useLooks.ts`) owns the per-look states (`reconcileLooks`, `withLookSettings`, `carryToHeirs`), the Editor's own pool, shuffle and beat targets over visible looks only, and broadcasting.
 - **Hand-over**: `lookHandovers(prev, next)` (`src/generator/looks.ts`) finds which looks changed owner through a real sharing link (never equal settings). Both the Editor and the Output window call `pool.rekey(from, to)` BEFORE `sync`, so the heir keeps the same generator and video element and the picture carries on without a black frame (`carryToHeirs` keeps the running state).
 - **UI**: Source row (Video / Test pattern / Visual look) and a Look row (Own look / Same as Face N) in the face bar; the Visuals panel edits the selected face's look (or the look it shares); the Sound section stays global. At the cap the own-look buttons are disabled with a tooltip; sharing stays possible.
-- **Budget lever** (`src/generator/budget.ts`): with 3 or 4 visible looks every look renders at 640x360 instead of 960x540 (`pool.setSize`, called before `setActive`). Capture rate stays 30 fps (`captureFpsFor` is a stub that may drop to 24 only if the laptop check says so). The 4-look cap does not move.
+- **Budget lever** (`src/generator/budget.ts`): with 3 or 4 visible looks every look renders at 640x360 instead of 960x540 (`pool.setSize`, called before `setActive`). The size has hysteresis (`chooseLookSize`): it shrinks at 3 looks and only grows back at 1 or fewer, so toggling a look around the 2/3 boundary does not resize every look each time. Capture rate stays 30 fps. The 4-look cap does not move.
 - **Sound**: one microphone in the Editor; every live look gets the same levels.
 
 ## Checks
@@ -42,7 +42,7 @@ Design: `2026-10-18-per-face-content-design.md`. Plan: `../plans/2026-10-18-hype
 ## Deferred minors (from the reviews)
 
 - Renderer: one throwing video upload blanks every face (wrap per-video upload); stale texture while the loop is stopped.
-- Pool: `available` reflects the last sync only; a throwing factory/dispose aborts partway; `setSize` before `setState` on a new source; no NaN guard in `setSize`.
-- Budget: no hysteresis at the 2/3-look boundary (flapping between sizes when a look toggles); `captureFpsFor` is a stub.
-- Editor: misleading cap notice when re-pressing Own look, literal 4 in a notice; hidden look shuffle timer keeps counting; double broadcast on the Off-draft path.
+- Pool: a throwing factory/dispose aborts partway.
+- Editor: misleading cap notice when re-pressing Own look; hidden look shuffle timer keeps counting; double broadcast on the Off-draft path.
+- Done since: one bad video upload no longer blanks every face (both renderers); look size hysteresis; `setSize` before `setState` on a new source and a NaN guard in `setSize`; the cap notice uses `MAX_LOOKS`; the unused `captureFpsFor` stub is gone.
 - Tests: some resolve/pool/normalise edge cases (listed in the SDD ledger).

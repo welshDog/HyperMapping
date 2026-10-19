@@ -127,7 +127,7 @@ Each face can show its own thing. Pick a face tab, then use the **Source** row u
 
 ## Status
 
-Automated checks: the test suite (about 680 tests), the typecheck and the production build all pass.
+Automated checks: the test suite (about 700 tests), the typecheck and the production build all pass.
 
 Checked by hand by the author, on a laptop and a phone:
 
@@ -143,7 +143,7 @@ Not checked on real hardware yet:
 - **How accurate calibration is on a real box with a real projector.** In tests with a simulated camera the recovered corners are within about 0.2 pixel; a real room, lens and projector will be less exact, so expect to nudge the pins.
 - **Sound reaction with a real microphone.** The microphone sensitivity numbers (noise floor, gate) are educated guesses; if the bars jump in a silent room, lower Sensitivity.
 - **Face shapes on the WebGPU renderer and on a phone.** The WebGPU shader mirrors the WebGL2 one but could not be run in the headless check (no WebGPU adapter there); add a triangle and a circle and look at the edges and at how easy the handles are to grab. `?renderer=webgl2` forces the checked path.
-- **Different content on each shape (branch `feat/per-face-content`).** Pixel-checked in headless Chrome on the WebGL2 renderer only (two looks differ, a shared look matches its owner, the pattern face shows the pattern, Randomize on one look leaves another look's pixels identical, the look hand-over keeps the picture lit, 4 looks shrink to 640x360 and stay lit, a browser without visuals falls back to the pattern). NOT yet checked on the laptop or phone: 4 looks at once (frame rate and heat), one microphone driving all of them, the Output window mirroring the Editor, Randomize on one shape leaving the others alone, and `?renderer=webgpu` in a real browser (the headless check has no WebGPU).
+- **Different content on each shape.** Tried by the author on the laptop and working. Pixel-checked in headless Chrome on the WebGL2 renderer only (two looks differ, a shared look matches its owner, the pattern face shows the pattern, Randomize on one look leaves another look's pixels identical, the look hand-over keeps the picture lit, 4 looks shrink to 640x360 and stay lit, a browser without visuals falls back to the pattern). Still not checked: it on a phone, `?renderer=webgpu` in a real browser (the headless check has no WebGPU), and hard numbers for frame rate and heat with 4 looks at once.
 - **The 20-minute thermal run** and the phone frame rate for Plasma and Kaleidoscope over a long session (phones use a cheaper version of those two looks).
 - iPhone-specific behaviour of the camera and microphone pages.
 

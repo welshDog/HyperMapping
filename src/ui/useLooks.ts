@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { beatTargets, carryToHeirs, lookHandovers, reconcileLooks, shuffleTargets, withLookSettings, type LookStates } from '../generator/looks';
-import { lookRenderSize } from '../generator/budget';
+import { chooseLookSize } from '../generator/budget';
 import { createLookPool, ownersChanged, type LookPool } from '../generator/pool';
 import { loadGeneratorState, saveGeneratorState } from '../generator/remember';
 import { newLookSettings as freshLookSettings, settingsFromState, type LookSettings } from '../generator/settings';
@@ -38,6 +38,7 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
   const [looks, setLooks] = useState<LookStates>(initialLooks);
   const [available, setAvailable] = useState(true);
   const visibleRef = useRef<ReadonlySet<string>>(new Set());
+  const sizeRef = useRef<{ w: number; h: number } | null>(null); // the look render size in use (hysteresis)
   const rendererRef = useRef(renderer);
   rendererRef.current = renderer;
   const publishRef = useRef(publish);
@@ -57,8 +58,9 @@ export function useLooks({ renderer, store, channelRef, surfacesRef, publish, ap
       setState: (owner, state) => inner.setState(owner, state),
       setActive: (owners) => {
         visibleRef.current = owners;
-        const { w, h } = lookRenderSize(owners.size); // fewer pixels per look when 3-4 are showing
-        inner.setSize(w, h); // before setActive, so a look switched on draws its first frame at the final size
+        const next = chooseLookSize(sizeRef.current, owners.size); // fewer pixels per look when 3-4 are showing
+        sizeRef.current = next;
+        inner.setSize(next.w, next.h); // before setActive, so a look switched on draws its first frame at the final size
         inner.setActive(owners);
       },
       setSize: (w, h) => inner.setSize(w, h),

@@ -312,7 +312,7 @@ export function createGeneratorSource(): GeneratorSource | null {
       setSize: (w, h) => {
         const nw = Math.round(w);
         const nh = Math.round(h);
-        if (disposed || !canvas || nw < 1 || nh < 1 || (nw === width && nh === height)) return;
+        if (disposed || !canvas || !(nw >= 1 && nh >= 1) || (nw === width && nh === height)) return; // also rejects NaN/Infinity
         width = nw;
         height = nh;
         canvas.width = nw; // clears the drawing buffer: redraw straight away
