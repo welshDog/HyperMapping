@@ -122,3 +122,81 @@ export function moveGluedPin(
   // pointer is inside its radius: fall back to the raw pointer position once.
   return movePins(surfaces, group, snapped) ?? movePins(surfaces, group, p);
 }
+
+const sameCorners = (a: Corners, b: Corners) =>
+  CORNER_KEYS.every((k) => a[k][0] === b[k][0] && a[k][1] === b[k][1]);
+
+/**
+ * Write the corners of `moved` (a pin move computed from an older layout, e.g. the drag start) onto the
+ * matching faces of `current`, by id. Every other field (source, look, sharing, shape, slice) comes from
+ * `current`. Ids missing from either list are ignored. `current` itself comes back when no corners differ.
+ * Inputs are never mutated.
+ */
+export function applyCornersById(current: Surface[], moved: Surface[]): Surface[] {
+  const byId = new Map(moved.map((s) => [s.id, s.corners]));
+  let changed = false;
+  const out = current.map((s) => {
+    const corners = byId.get(s.id);
+    if (!corners || sameCorners(s.corners, corners)) return s;
+    changed = true;
+    return { ...s, corners: { tl: corners.tl, tr: corners.tr, br: corners.br, bl: corners.bl } };
+  });
+  return changed ? out : current;
+}
+
+/**
+ * Grab a whole face: move all four of its pins by `delta` (unit space), the way dragging the body of a
+ * shape works. Glue on: every pin glued to one of its pins (any face) moves by the same amount, so joins
+ * stay joined and the neighbours follow; glue off: only this face moves and shared corners separate.
+ * The delta is limited per axis so no moved pin leaves the canvas (0..1); a pin already outside may move
+ * back in but not further out. The move is all or nothing: null if `id` is unknown, `delta` is not
+ * finite, or ANY affected face would no longer be a valid quad. A zero (or fully blocked) delta returns
+ * `surfaces` itself. Untouched faces come back as the same objects; the input is never mutated.
+ */
+export function moveFaceBy(surfaces: Surface[], id: string, delta: Vec2, opts: { glue: boolean }): Surface[] | null {
+  if (!finite2(delta)) return null;
+  const face = surfaces.find((s) => s.id === id);
+  if (!face) return null;
+  const pins: PinRef[] = [];
+  const seen = new Set<string>();
+  const add = (p: PinRef) => {
+    const key = `${p.surfaceId}:${p.corner}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pins.push(p);
+  };
+  for (const corner of CORNER_KEYS) {
+    const own = { surfaceId: id, corner };
+    if (opts.glue) gluedGroup(surfaces, own).forEach(add);
+    else add(own);
+  }
+  // Per-axis limit: lo <= d <= hi keeps every moved pin inside [min(0, x), max(1, x)].
+  const limit = (axis: 0 | 1, d: number) => {
+    let lo = -Infinity;
+    let hi = Infinity;
+    for (const pin of pins) {
+      const x = pinPosition(surfaces, pin)![axis];
+      lo = Math.max(lo, Math.min(0, x) - x);
+      hi = Math.min(hi, Math.max(1, x) - x);
+    }
+    return Math.min(hi, Math.max(lo, d));
+  };
+  const dx = limit(0, delta[0]);
+  const dy = limit(1, delta[1]);
+  if (dx === 0 && dy === 0) return surfaces;
+  const byFace = new Map<string, CornerKey[]>();
+  for (const pin of pins) byFace.set(pin.surfaceId, [...(byFace.get(pin.surfaceId) ?? []), pin.corner]);
+  const out: Surface[] = [];
+  for (const s of surfaces) {
+    const moved = byFace.get(s.id);
+    if (!moved) {
+      out.push(s);
+      continue;
+    }
+    const corners: Corners = { tl: s.corners.tl, tr: s.corners.tr, br: s.corners.br, bl: s.corners.bl };
+    for (const corner of moved) corners[corner] = [s.corners[corner][0] + dx, s.corners[corner][1] + dy];
+    if (!isValidQuad(corners)) return null;
+    out.push({ ...s, corners });
+  }
+  return out;
+}

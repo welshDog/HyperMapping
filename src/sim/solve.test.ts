@@ -182,3 +182,15 @@ describe('toSurfaces and shapes', () => {
     for (const s of toSurfaces(solveFaces(CUBE, CORNER_VIEW))) expect('shape' in s).toBe(false);
   });
 });
+
+describe('toSurfaces and per-face sources', () => {
+  it('simulator faces carry no source, look or lookOf key (they show the video)', () => {
+    const list = toSurfaces(solveFaces(CUBE, CORNER_VIEW));
+    expect(list.length).toBeGreaterThan(0);
+    for (const s of list) {
+      expect('source' in s).toBe(false);
+      expect('look' in s).toBe(false);
+      expect('lookOf' in s).toBe(false);
+    }
+  });
+});

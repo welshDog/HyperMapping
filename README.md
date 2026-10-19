@@ -34,6 +34,7 @@ then open `https://localhost:5173`.
 - **+ Face** adds another grid (up to 6). Each face has its own four pins; pick a face with its tab, then drag its pins onto that face of the box. **Delete** removes the selected face, **Reset corners** resets just that face.
 - All faces share one video. Each face shows its own **slice** of it, like unfolding the box: **Edit slice** opens a box that stands for the whole video (there is no picture of the video yet) where you drag the selected face's rectangle (drag the body to move it, a corner to resize it); press Done to see the result. New faces start as equal strips.
 - Play mode and the output window show every face.
+- **Grab:** press and drag on the body of a shape (the real shape, so a circle's or triangle's empty frame corners don't count) to move the whole thing; pressing it also selects it. The corner handles still win when you press right on one. With **Glue** on, pins glued to the shape's corners move with it, so neighbours follow and joins stay joined; with Glue off only that shape moves and shared corners separate (the glue breaks). The shape stops at the canvas edge instead of squashing, and a move that would break any glued face is refused. No snapping while grabbing (snapping stays on the single pin handles). A shape sitting under the toolbar does not take presses meant for its buttons.
 - **Glue** (toolbar, on by default): pins that sit on the same spot belong together. Drag one and the others move with it, so a box corner shared by three faces moves all three. Drag a pin close to a pin of another face and it snaps onto it. A small dim dot marks the corners of your other faces and a ring marks a glued pin. To pull a pin away from its neighbours, switch Glue **off**, drag it, then switch Glue back on. A move that would break any face is refused.
 
 ## Virtual projector (simulator)
@@ -92,6 +93,22 @@ The visuals can react to music. In the Visuals panel, under **Sound**, press **L
 - The slice stays a rectangle of the video over the whole frame; the shape just hides part of it (**Edit slice** outlines the shape on the slice). The edge is smoothed, Glue, Setups and Export/Import all keep the shapes.
 - The simulator's box still solves to plain quads, and **Send to app** replaces the whole face list (so it replaces a shaped collage).
 
+## Different content on each shape
+
+Each face can show its own thing. Pick a face tab, then use the **Source** row under the Shape row:
+
+- **Video** shows that face's slice of the loaded video (every face starts here, and every older saved setup loads as all Video). There is still only one video.
+- **Test pattern** shows the calibration grid on just that face.
+- **Visual look** gives the face its own moving visuals. A **Look** row then appears: **Own look** (the face has its own look) or **Same as Face N** (the face follows another face's look; each face still shows its own slice of it, so a look can run across several faces).
+- At most **4 different looks** run at once. Faces sharing a look count once, so you can still share when 4 are running. When the limit is reached, Visual look / Own look are greyed out (hover for why).
+- The **Visuals** panel edits the selected face's look: Randomize, Look style, Speed, Auto-shuffle and the look code apply to that look only, and every face set to Same as it follows. Randomizing one face never changes another face's look.
+- Deleting a face whose look others share, or switching it to Video or Test pattern, hands the look to the first face that shared it (the picture carries on); the others then follow that face.
+- The toolbar **Test pattern** button still puts the pattern on **every** face at once (for lining up). It is not saved; switch it off and each face goes back to its own source.
+- Sound: there is **one microphone** for everything. Listen/Stop, Sensitivity and the tick boxes stay in the Sound section and drive every look the same way.
+- If no video is loaded, a Video face shows the test pattern. If the browser cannot make the visuals, a look face shows the video (or the test pattern) instead, and the panel says so.
+- Setups, Export/Import and the remembered layout keep each face's source and look. The Output window and the simulator should show the same per-face picture as the Editor (not yet checked on real devices, see below).
+- With 3 or 4 looks running, each look is drawn smaller (640x360 instead of 960x540) so four stay smooth; you may notice slightly softer visuals.
+
 ## Saving your setup
 
 - **Setups** (in the toolbar) opens the setups panel. Type a name and press **Save**: the layout of all your faces (pins and slices) is stored in this browser. **Load** brings one back, **Delete** removes one (tap twice). Saving under an existing name replaces it. You can keep up to 30.
@@ -104,12 +121,13 @@ The visuals can react to music. In the Visuals panel, under **Sound**, press **L
 
 - A phone cannot use the output window as a second screen; it opens a tab. For a phone plugged into a
   projector over USB-C/HDMI, use Play mode (screen mirror). True extended display needs the native shell (later milestone).
+- At most 4 different visual looks at once (sharing a look is free). Each running look costs a hidden canvas and shader, so on a phone 3-4 looks may run warm or drop frames; use shared looks or Video faces if it struggles.
 - iPhone Safari cannot make a non-video element fullscreen, so Play mode stays inside the browser
   chrome there. Use Share > Add to Home Screen and launch from the icon instead (the manifest is fullscreen).
 
 ## Status
 
-Automated checks: the test suite (about 580 tests), the typecheck and the production build all pass.
+Automated checks: the test suite (about 680 tests), the typecheck and the production build all pass.
 
 Checked by hand by the author, on a laptop and a phone:
 
@@ -125,6 +143,7 @@ Not checked on real hardware yet:
 - **How accurate calibration is on a real box with a real projector.** In tests with a simulated camera the recovered corners are within about 0.2 pixel; a real room, lens and projector will be less exact, so expect to nudge the pins.
 - **Sound reaction with a real microphone.** The microphone sensitivity numbers (noise floor, gate) are educated guesses; if the bars jump in a silent room, lower Sensitivity.
 - **Face shapes on the WebGPU renderer and on a phone.** The WebGPU shader mirrors the WebGL2 one but could not be run in the headless check (no WebGPU adapter there); add a triangle and a circle and look at the edges and at how easy the handles are to grab. `?renderer=webgl2` forces the checked path.
+- **Different content on each shape (branch `feat/per-face-content`).** Pixel-checked in headless Chrome on the WebGL2 renderer only (two looks differ, a shared look matches its owner, the pattern face shows the pattern, Randomize on one look leaves another look's pixels identical, the look hand-over keeps the picture lit, 4 looks shrink to 640x360 and stay lit, a browser without visuals falls back to the pattern). NOT yet checked on the laptop or phone: 4 looks at once (frame rate and heat), one microphone driving all of them, the Output window mirroring the Editor, Randomize on one shape leaving the others alone, and `?renderer=webgpu` in a real browser (the headless check has no WebGPU).
 - **The 20-minute thermal run** and the phone frame rate for Plasma and Kaleidoscope over a long session (phones use a cheaper version of those two looks).
 - iPhone-specific behaviour of the camera and microphone pages.
 

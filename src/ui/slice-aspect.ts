@@ -1,39 +1,22 @@
-import { pickSource } from '../generator/select';
 import { PATTERN_HEIGHT, PATTERN_WIDTH } from '../sources/pattern';
+import type { FaceSource } from '../surfaces/types';
 
 export interface SliceAspectInput {
-  /** The Test pattern button. */
-  force: boolean;
-  /** Whether this browser could make the test pattern. */
-  patternAvailable: boolean;
-  /** The loaded video's size, or null when no video is loaded. */
-  video: { width: number; height: number } | null;
-  /** The random-visuals generator is switched on. Default false. */
-  generatorOn?: boolean;
-  /** Whether this browser could make the generator. Default false. */
-  generatorAvailable?: boolean;
+  /** What the selected face is set to show. */
+  source: FaceSource;
+  /** The Test pattern button is on: every face shows the pattern. */
+  patternForced: boolean;
+  /** The loaded video's width / height, or null when no video is loaded. */
+  videoAspect: number | null;
 }
 
 /**
- * The width / height of the picture the faces are actually showing, which is the shape the slice box
- * must have: 16:9 while the test pattern or the generator is on screen, otherwise the video's,
- * otherwise 16:9. The choice goes through `pickSource`, the same rule the renderer feed uses.
+ * The width / height of the picture the selected face is actually showing, which is the shape its slice
+ * box must have: 16:9 for a look or the test pattern (also when the pattern is forced), the loaded
+ * video's shape for a Video face, and 16:9 when there is no usable video.
  */
-export function sliceAspect({
-  force,
-  patternAvailable,
-  video,
-  generatorOn = false,
-  generatorAvailable = false,
-}: SliceAspectInput): number {
-  const showing = pickSource({
-    patternForce: force,
-    generatorOn,
-    hasVideo: video !== null,
-    patternAvailable,
-    generatorAvailable,
-  });
-  if (showing === 'pattern' || showing === 'generator') return PATTERN_WIDTH / PATTERN_HEIGHT;
-  if (showing === 'video' && video && video.width > 0 && video.height > 0) return video.width / video.height;
+export function sliceAspect({ source, patternForced, videoAspect }: SliceAspectInput): number {
+  const generated = patternForced || source !== 'video';
+  if (!generated && videoAspect !== null && Number.isFinite(videoAspect) && videoAspect > 0) return videoAspect;
   return PATTERN_WIDTH / PATTERN_HEIGHT;
 }

@@ -1,4 +1,5 @@
 import type { Corners } from '../warp/types';
+import type { LookSettings } from '../generator/settings';
 
 /** A rectangle of the video, in video space: 0..1, v down (v = 0 is the top row). */
 export interface SrcRect {
@@ -20,7 +21,18 @@ export interface Surface {
   corners: Corners;
   srcRect: SrcRect;
   shape?: FaceShape;
+  /** What the face shows; missing means the loaded video (so old setups still load). */
+  source?: FaceSource;
+  /** This face's own visual look (used when `source` is 'look' and `lookOf` is unset). */
+  look?: LookSettings;
+  /** Id of the face whose look this face shares instead of owning one. */
+  lookOf?: string;
 }
+
+export type FaceSource = 'video' | 'pattern' | 'look';
+export const FACE_SOURCES: readonly FaceSource[] = ['video', 'pattern', 'look'];
+
+export const sourceOf = (s: Surface): FaceSource => s.source ?? 'video';
 
 export const shapeOf = (s: Surface): FaceShape => s.shape ?? 'quad';
 

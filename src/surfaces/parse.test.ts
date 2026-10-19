@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSurfaceList } from './parse';
+import { DEFAULT_LOOK_SETTINGS } from '../generator/settings';
 
 const corners = { tl: [0, 0], tr: [1, 0], br: [1, 1], bl: [0, 1] };
 const rect = { u0: 0, v0: 0, u1: 1, v1: 1 };
@@ -55,6 +56,46 @@ describe('parseSurfaceList', () => {
       expect(parseSurfaceList([surface('s1'), surface('s2', { shape: 'hexagon' })])).toBeNull();
       expect(parseSurfaceList([surface('s1', { shape: 3 })])).toBeNull();
       expect(parseSurfaceList([surface('s1', { shape: null })])).toBeNull();
+    });
+  });
+
+  describe('face sources', () => {
+    const look = { look: { style: 'plasma', seed: 3 }, speed: 1, shuffleSec: 0, stylePick: 'auto' };
+    it('an old list gains no source/look/lookOf keys', () => {
+      for (const f of parseSurfaceList([surface('s1'), surface('s2')])!) {
+        expect('source' in f).toBe(false);
+        expect('look' in f).toBe(false);
+        expect('lookOf' in f).toBe(false);
+      }
+    });
+    it('writes no source key for video', () => {
+      expect('source' in parseSurfaceList([surface('s1', { source: 'video' })])![0]).toBe(false);
+    });
+    it('rejects an unknown source', () => {
+      expect(parseSurfaceList([surface('s1'), surface('s2', { source: 'hologram' })])).toBeNull();
+    });
+    it('accepts a valid look and drops its unknown keys', () => {
+      const out = parseSurfaceList([surface('s1', { source: 'look', look: { ...look, evil: 1 } })])!;
+      expect(out[0].source).toBe('look');
+      expect(out[0].look).toEqual(look);
+    });
+    it('rejects a bad look or a bad lookOf type', () => {
+      expect(parseSurfaceList([surface('s1', { source: 'look', look: { ...look, speed: 9 } })])).toBeNull();
+      expect(parseSurfaceList([surface('s1', { source: 'look', look: 'x' })])).toBeNull();
+      expect(parseSurfaceList([surface('s1', { source: 'look', lookOf: 5 })])).toBeNull();
+      expect(parseSurfaceList([surface('s1', { source: 'look', lookOf: '' })])).toBeNull();
+    });
+    it('keeps a good share and repairs a bad link instead of rejecting', () => {
+      const ok = parseSurfaceList([surface('s1', { source: 'look', look }), surface('s2', { source: 'look', lookOf: 's1' })])!;
+      expect(ok[1].lookOf).toBe('s1');
+      const bad = parseSurfaceList([surface('s1', { source: 'look', lookOf: 'ghost' })])!;
+      expect(bad[0].look).toEqual(DEFAULT_LOOK_SETTINGS);
+      expect('lookOf' in bad[0]).toBe(false);
+    });
+    it('five owners from the wire come out as four owners and one Video face', () => {
+      const out = parseSurfaceList([1, 2, 3, 4, 5].map((n) => surface('s' + n, { source: 'look', look })))!;
+      expect(out.filter((f) => f.source === 'look')).toHaveLength(4);
+      expect('source' in out[4] || 'look' in out[4]).toBe(false);
     });
   });
 });

@@ -15,9 +15,15 @@ interface Props {
    * pixel size, needed to measure snapping in pixels. Return true if the move was accepted.
    */
   onPinMove: (ref: PinRef, p: Vec2, size: { w: number; h: number }) => boolean;
-  /** A pin drag began / ended (also on cancel, or when the selection changes mid-drag). */
+  /** A pin or grab drag began / ended (also on cancel, or when the selection changes mid-drag). */
   onPinDragStart?: () => void;
   onPinDragEnd?: () => void;
+  /**
+   * The body of a face was grabbed and dragged: `delta` (unit space) is how far the pointer has moved since
+   * the grab began. Return true if the move was accepted. Pressing a face's body also selects it.
+   */
+  onGrabMove?: (faceId: string, delta: Vec2) => boolean;
+  onSelectFace?: (faceId: string) => void;
   /** Bump to repaint after surfacesRef was changed from outside (e.g. "Reset corners"). */
   repaintSignal?: number;
 }
@@ -28,8 +34,11 @@ interface Props {
  * glued to another. Positions are painted by mutating SVG attributes directly: a pointermove never
  * causes a React render.
  */
-export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart, onPinDragEnd, repaintSignal }: Props) {
+export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart, onPinDragEnd, onGrabMove, onSelectFace, repaintSignal }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const hitEls = useRef<Record<string, SVGPolygonElement | null>>({});
+  // The face body being grabbed: where the pointer started (unit space). One finger at a time via `gate`.
+  const grab = useRef<{ faceId: string; startX: number; startY: number } | null>(null);
   const circles = useRef<Partial<Record<CornerKey, SVGCircleElement | null>>>({});
   const rings = useRef<Partial<Record<CornerKey, SVGCircleElement | null>>>({});
   const dots = useRef<Record<string, SVGCircleElement | null>>({});
@@ -49,6 +58,12 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
       outlines.current[s.id]?.setAttribute(
         'points',
         CORNER_KEYS.map((k) => `${c[k][0] * rect.width},${c[k][1] * rect.height}`).join(' '),
+      );
+      hitEls.current[s.id]?.setAttribute(
+        'points',
+        shapeOutlinePoints(shapeOf(s), c)
+          .map(([px, py]) => `${px * rect.width},${py * rect.height}`)
+          .join(' '),
       );
       const shapeEl = shapeEls.current[s.id];
       if (shapeEl) {
@@ -98,6 +113,8 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
 
   // A second finger changing the selection mid-drag must not leave a stale drag behind.
   useEffect(() => {
+    // Grabbing a face body selects it: that selection change must not cancel the grab that caused it.
+    if (grab.current?.faceId === selectedId) return;
     gate.current.reset();
     if (dragging.current !== null) {
       dragging.current = null;
@@ -130,13 +147,67 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
+  const toUnit = (e: PointerEvent): Vec2 | null => {
+    const el = svgRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!(rect.width > 0 && rect.height > 0)) return null;
+    return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+  };
+
+  const onGrabDown = (faceId: string) => (e: PointerEvent<SVGPolygonElement>) => {
+    const at = toUnit(e);
+    if (!at) return;
+    e.stopPropagation();
+    if (!gate.current.down(e.pointerId)) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    grab.current = { faceId, startX: at[0], startY: at[1] };
+    onPinDragStart?.(); // the drag base is the layout as it is right now
+    if (faceId !== selectedId) onSelectFace?.(faceId);
+  };
+
+  const onGrabMoveEvent = (faceId: string) => (e: PointerEvent<SVGPolygonElement>) => {
+    const g = grab.current;
+    if (!g || g.faceId !== faceId || !gate.current.owns(e.pointerId)) return;
+    const at = toUnit(e);
+    if (!at) return;
+    if (onGrabMove?.(faceId, [at[0] - g.startX, at[1] - g.startY])) paint();
+  };
+
+  const onGrabUp = (e: PointerEvent<SVGPolygonElement>) => {
+    if (!gate.current.up(e.pointerId)) return;
+    grab.current = null;
+    onPinDragEnd?.();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   const list = surfacesRef.current;
   const selectedIndex = list.findIndex((s) => s.id === selectedId);
   const selectedColor = surfaceColor(Math.max(0, selectedIndex));
 
   return (
-    // z-30: above the z-20 toolbar so a pin dragged under it can still be grabbed. The SVG
-    // itself ignores pointers; only the selected face's circles take them.
+    <>
+      {/* The grab layer sits BELOW the z-20 toolbar (a shape under a button must not swallow the press) and
+          below the pins; only the real shape outline takes pointers, in draw order (last face on top). */}
+      <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full">
+        {list.map((s) => (
+          <polygon
+            key={`hit-${s.id}`}
+            ref={(el) => {
+              hitEls.current[s.id] = el;
+            }}
+            fill="transparent"
+            className="cursor-move touch-none"
+            style={{ pointerEvents: 'fill' }}
+            onPointerDown={onGrabDown(s.id)}
+            onPointerMove={onGrabMoveEvent(s.id)}
+            onPointerUp={onGrabUp}
+            onPointerCancel={onGrabUp}
+          />
+        ))}
+      </svg>
+    {/* z-30: above the z-20 toolbar so a pin dragged under it can still be grabbed. The SVG
+        itself ignores pointers; only the selected face's circles take them. */}
     <svg ref={svgRef} className="pointer-events-none absolute inset-0 z-30 h-full w-full">
       {list.map((s, i) =>
         s.id === selectedId ? null : (
@@ -231,5 +302,6 @@ export function PinOverlay({ surfacesRef, selectedId, onPinMove, onPinDragStart,
           />
         ))}
     </svg>
+    </>
   );
 }

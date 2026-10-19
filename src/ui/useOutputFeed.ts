@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { createGeneratorSource, type GeneratorSource } from '../generator/source';
-import { pickSource } from '../generator/select';
-import { initialState, type GeneratorState } from '../generator/shuffle';
+import { lookRenderSize } from '../generator/budget';
+import { createGeneratorSource } from '../generator/source';
+import { createLookPool, ownersChanged, type LookPool } from '../generator/pool';
+import { lookHandovers, type LookStates } from '../generator/looks';
+import { sameSettings, settingsFromState, stateFromSettings } from '../generator/settings';
+import type { GeneratorState } from '../generator/shuffle';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import type { Renderer } from '../renderer';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
+import { resolveFaceSources, visibleLookOwners } from '../sources/resolve';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
+import { lookOwners } from '../surfaces/sources';
 import type { Surface } from '../surfaces/types';
 
 /**
@@ -14,15 +19,20 @@ import type { Surface } from '../surfaces/types';
  * is given it is called INSTEAD of `renderer.setSurfaces` (the simulator uses this to ignore the
  * app's faces while it shows its own layout).
  *
- * It also owns a built-in test pattern: shown whenever no video is loaded, or when the Editor's
- * Test pattern button is on (a `pattern` message), so the Output window and the simulator are never
- * just black. The same goes for the random-visuals generator: a `generator` message turns it on and
- * off, and `pickSource` decides which of pattern, generator, video the renderer shows.
+ * Each face picks its own source (video, test pattern or a random-visuals look). The hook keeps the
+ * latest faces and `looks` states, owns the look pool, the pattern and the video, and re-resolves what
+ * every face shows whenever any of them changes. The Editor's Test pattern button (a `pattern`
+ * message) overrides every face.
+ *
+ * `setUniformSource(true)` makes every face show the same fallback picture (video, else pattern) and
+ * ignore looks: the simulator uses it while it shows its own layout, whose ids collide with the app's.
  */
 export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces: Surface[]) => void) {
   const handleRef = useRef<VideoHandle | null>(null);
   const patternRef = useRef<PatternSource | null>(null);
-  const generatorRef = useRef<GeneratorSource | null>(null);
+  const poolRef = useRef<LookPool | null>(null);
+  const uniformRef = useRef(false);
+  const applyRef = useRef<(() => void) | null>(null);
   const onSurfacesRef = useRef(onSurfaces);
   onSurfacesRef.current = onSurfaces;
 
@@ -31,7 +41,7 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     const v = handleRef.current?.video;
     if (v?.paused) v.play().catch(() => {});
     patternRef.current?.ensurePlaying();
-    generatorRef.current?.ensurePlaying();
+    poolRef.current?.ensurePlaying();
   }, []);
 
   useEffect(() => {
@@ -47,34 +57,85 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     const ch = new BroadcastChannel(CHANNEL);
     let latest = 0; // guards against out-of-order async video loads
     let force = false; // the Editor's Test pattern button
+    let surfaces: Surface[] = [];
+    let looks: LookStates = Object.create(null);
     const pattern = createPatternSource(); // null when the browser cannot make it
     patternRef.current = pattern;
-    const generator = createGeneratorSource(); // null when the browser cannot make it
-    generatorRef.current = generator;
-    let generatorState: GeneratorState = initialState(Date.now(), Math.random); // off until the Editor says so
-    generator?.setState(generatorState);
+    const pool = createLookPool(createGeneratorSource);
+    poolRef.current = pool;
+    const sent = new Map<string, GeneratorState>(); // what the pool already holds, by owner
+    const fallback = new Map<string, GeneratorState>(); // states built here for owners the Editor has not described yet
+    // Owner ids of the last pool.sync (null: never synced). The pool is only synced when they change, so a
+    // generator factory that fails is retried when the owners change, not on every message (~60/s in a drag).
+    let synced: string[] | null = null;
+    const syncPool = (ids: string[]) => {
+      if (!ownersChanged(synced, ids)) return;
+      pool.sync(ids);
+      synced = ids;
+    };
 
-    /** Give the renderer the pattern, the generator or the video, whichever should be showing. */
-    const apply = () => {
+    /** The one picture every face shows in uniform mode: pattern when forced, else video, else pattern. */
+    const uniformVideo = (): HTMLVideoElement | null => {
+      if (force && pattern) return pattern.video;
       const video = handleRef.current;
-      const kind = pickSource({
+      return video ? video.video : (pattern?.video ?? null);
+    };
+
+    /** Work out what every face shows and hand the renderer the matching videos. */
+    const apply = () => {
+      if (uniformRef.current) {
+        syncPool([]);
+        sent.clear();
+        fallback.clear();
+        pool.setActive(new Set());
+        renderer.setVideo(uniformVideo());
+        return;
+      }
+      const owners = lookOwners(surfaces);
+      syncPool(owners.map((f) => f.id));
+      const ownerIds = new Set(owners.map((f) => f.id));
+      for (const id of [...sent.keys()]) if (!ownerIds.has(id)) sent.delete(id);
+      for (const id of [...fallback.keys()]) if (!ownerIds.has(id)) fallback.delete(id);
+      for (const f of owners) {
+        if (!f.look) continue;
+        let state: GeneratorState | undefined = Object.hasOwn(looks, f.id) ? looks[f.id] : undefined;
+        if (!state) {
+          const cached = fallback.get(f.id);
+          state = cached && sameSettings(settingsFromState(cached), f.look) ? cached : stateFromSettings(f.look, Date.now());
+          fallback.set(f.id, state);
+        }
+        if (sent.get(f.id) !== state) {
+          pool.setState(f.id, state);
+          sent.set(f.id, state);
+        }
+      }
+      const video = handleRef.current;
+      const resolved = resolveFaceSources(surfaces, {
         patternForce: force,
-        generatorOn: generatorState.on,
         hasVideo: video !== null,
         patternAvailable: pattern !== null,
-        generatorAvailable: generator !== null,
+        generatorAvailable: (owner) => pool.hasSource(owner),
       });
-      const source =
-        kind === 'pattern' && pattern
-          ? pattern.video
-          : kind === 'generator' && generator
-            ? generator.video
-            : kind === 'video' && video
-              ? video.video
-              : null;
-      generator?.setActive(kind === 'generator');
-      renderer.setVideo(source);
+      const visible = visibleLookOwners(resolved);
+      const { w, h } = lookRenderSize(visible.size);
+      pool.setSize(w, h); // before setActive: a look switched on draws its first frame at the final size
+      pool.setActive(visible);
+      const videos = new Map<string, HTMLVideoElement | null>();
+      for (const [id, ref] of resolved) {
+        videos.set(
+          id,
+          ref.kind === 'video'
+            ? (video?.video ?? null)
+            : ref.kind === 'pattern'
+              ? (pattern?.video ?? null)
+              : ref.kind === 'look'
+                ? pool.video(ref.owner)
+                : null,
+        );
+      }
+      renderer.setFaceVideos(videos);
     };
+    applyRef.current = apply;
     apply();
 
     ch.onmessage = async (ev) => {
@@ -83,15 +144,26 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
       if (msg.type === 'surfaces') {
         if (onSurfacesRef.current) onSurfacesRef.current(msg.surfaces);
         else renderer.setSurfaces(msg.surfaces);
+        // A sharer took over a look (its owner deleted or switched away): keep that look's generator
+        // source, and its running state until the Editor's `looks` message names the new owner.
+        // Only when the owners change (a hand-over always changes them), like the pool sync in `apply`.
+        if (ownersChanged(synced, lookOwners(msg.surfaces).map((f) => f.id))) {
+          for (const { from, to } of lookHandovers(surfaces, msg.surfaces)) {
+            pool.rekey(from, to);
+            const running = Object.hasOwn(looks, from) ? looks[from] : fallback.get(from);
+            if (running) fallback.set(to, running);
+          }
+        }
+        surfaces = msg.surfaces;
+        apply();
       } else if (msg.type === 'pattern') {
         force = msg.on;
         apply();
-      } else if (msg.type === 'generator') {
-        generatorState = msg.state;
-        generator?.setState(generatorState);
+      } else if (msg.type === 'looks') {
+        looks = msg.states;
         apply();
       } else if (msg.type === 'audio') {
-        generatorRef.current?.setAudio({ bass: msg.bass, treble: msg.treble, vol: msg.vol });
+        pool.setAudio({ bass: msg.bass, treble: msg.treble, vol: msg.vol });
       } else if (msg.type === 'video') {
         const mine = ++latest;
         try {
@@ -121,15 +193,23 @@ export function useOutputFeed(renderer: Renderer | null, onSurfaces?: (surfaces:
     return () => {
       ch.close();
       latest++; // a load still in flight is now stale: it disposes itself instead of being assigned
+      applyRef.current = null;
       handleRef.current?.dispose();
       handleRef.current = null;
-      generator?.dispose();
-      generatorRef.current = null;
+      pool.dispose();
+      poolRef.current = null;
       pattern?.dispose();
       patternRef.current = null;
-      renderer.setVideo(null);
+      renderer.setFaceVideos(new Map());
     };
   }, [renderer]);
 
-  return { resumeVideo };
+  /** On: every face shows the same fallback picture and looks are ignored. Off: per-face sources. */
+  const setUniformSource = useCallback((on: boolean) => {
+    if (uniformRef.current === on) return;
+    uniformRef.current = on;
+    applyRef.current?.();
+  }, []);
+
+  return { resumeVideo, setUniformSource };
 }

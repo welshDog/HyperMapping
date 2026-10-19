@@ -9,10 +9,12 @@ import {
   removeSurface,
   resizeRect,
   selectAfterRemove,
+  slicesAfterSourceChange,
   setSurfaceShape,
   surfaceColor,
 } from './model';
 import { FULL_RECT, MAX_SURFACES, MIN_SLICE, shapeOf, type Surface } from './types';
+import { DEFAULT_LOOK_SETTINGS } from '../generator/settings';
 import { isValidQuad } from '../warp/quad';
 
 const one = (): Surface[] => [{ id: 's1', corners: defaultCorners(0, 1), srcRect: FULL_RECT }];
@@ -251,5 +253,92 @@ describe('face shapes', () => {
   it('isValidSurfaces rejects an unknown shape value', () => {
     const bad = [{ ...one()[0], shape: 'hexagon' as never }];
     expect(isValidSurfaces(bad)).toBe(false);
+  });
+});
+
+describe('removeSurface with looks', () => {
+  const f = (id: string, over: Partial<Surface> = {}): Surface => ({ id, corners: defaultCorners(0, 1), srcRect: FULL_RECT, ...over });
+  const lookA = { ...DEFAULT_LOOK_SETTINGS, speed: 1.5 };
+  it('promotes the first sharer of a removed owner and re-points the rest', () => {
+    const list = [f('s1', { source: 'look', look: lookA }), f('s2', { source: 'look', lookOf: 's1' }), f('s3', { source: 'look', lookOf: 's1' })];
+    expect(removeSurface(list, 's1')).toEqual([f('s2', { source: 'look', look: lookA }), f('s3', { source: 'look', lookOf: 's2' })]);
+  });
+  it('removing a sharer or a Video face leaves the rest identical', () => {
+    const list = [f('s1', { source: 'look', look: lookA }), f('s2', { source: 'look', lookOf: 's1' }), f('s3')];
+    const a = removeSurface(list, 's2');
+    expect(a[0]).toBe(list[0]);
+    expect(a[1]).toBe(list[2]);
+    const b = removeSurface(list, 's3');
+    expect(b[0]).toBe(list[0]);
+    expect(b[1]).toBe(list[1]);
+  });
+  it('isValidSurfaces rejects an unknown source', () => {
+    expect(isValidSurfaces([f('s1', { source: 'hologram' as never })])).toBe(false);
+  });
+});
+
+describe('slicesAfterSourceChange', () => {
+  const LOOK = { style: 'plasma', seed: 1 } as never;
+  const strip = defaultSlices(3);
+  const mk = (id: string, i: number, extra: object = {}): Surface => ({ id, corners: defaultCorners(i, 3), srcRect: strip[i], ...extra });
+  const video = () => [mk('a', 0), mk('b', 1), mk('c', 2)];
+
+  it('video -> own look and pattern -> own look give the face the full picture', () => {
+    for (const src of [{}, { source: 'pattern' }]) {
+      const before = [mk('a', 0), mk('b', 1, src), mk('c', 2)];
+      const after = before.map((f) => (f.id === 'b' ? { ...f, source: 'look', look: LOOK } : f)) as Surface[];
+      const out = slicesAfterSourceChange(before, after, 'b');
+      expect(out[1].srcRect).toEqual(FULL_RECT);
+      expect(out[0]).toBe(after[0]);
+      expect(out[2]).toBe(after[2]);
+    }
+  });
+
+  it('sharer -> own look gives the full picture', () => {
+    const owner = mk('a', 0, { source: 'look', look: LOOK });
+    const before = [owner, mk('b', 1, { source: 'look', lookOf: 'a' }), mk('c', 2)];
+    const after = before.map((f) => (f.id === 'b' ? { id: 'b', corners: f.corners, srcRect: f.srcRect, source: 'look', look: LOOK } : f)) as Surface[];
+    expect(slicesAfterSourceChange(before, after, 'b')[1].srcRect).toEqual(FULL_RECT);
+  });
+
+  it('owner or sharer -> video/pattern returns the default strip for its position', () => {
+    const full = { ...FULL_RECT };
+    const owner = mk('b', 1, { source: 'look', look: LOOK, srcRect: full });
+    const sharer = mk('c', 2, { source: 'look', lookOf: 'b', srcRect: full });
+    const before = [mk('a', 0), owner, sharer];
+    for (const [id, i] of [['b', 1], ['c', 2]] as const) {
+      for (const to of ['video', 'pattern']) {
+        const after = before.map((f) => {
+          if (f.id !== id) return f;
+          const { look: _l, lookOf: _o, source: _s, ...rest } = f;
+          return to === 'pattern' ? { ...rest, source: 'pattern' } : rest;
+        }) as Surface[];
+        const out = slicesAfterSourceChange(before, after, id);
+        expect(out[i].srcRect).toEqual(strip[i]);
+        expect(out[0]).toBe(after[0]);
+      }
+    }
+  });
+
+  it('leaves everything else alone and returns the same list', () => {
+    const base = video();
+    const pat = base.map((f) => (f.id === 'b' ? { ...f, source: 'pattern' } : f)) as Surface[];
+    expect(slicesAfterSourceChange(base, pat, 'b')).toBe(pat); // video <-> pattern
+    const owner = [mk('a', 0, { source: 'look', look: LOOK }), mk('b', 1), mk('c', 2)];
+    const shared = owner.map((f) => (f.id === 'b' ? { ...f, source: 'look', lookOf: 'a' } : f)) as Surface[];
+    expect(slicesAfterSourceChange(owner, shared, 'b')).toBe(shared); // becoming a sharer
+    const other = shared.map((f) => (f.id === 'c' ? { ...f, source: 'look', lookOf: 'a' } : f)) as Surface[];
+    expect(slicesAfterSourceChange(shared, other, 'b')).toBe(other); // b unchanged (sharer -> sharer)
+    expect(slicesAfterSourceChange(base, base, 'zzz')).toBe(base);
+  });
+
+  it('does not mutate its inputs', () => {
+    const before = video();
+    const after = before.map((f) => (f.id === 'b' ? { ...f, source: 'look', look: LOOK } : f)) as Surface[];
+    const snapB = JSON.stringify(before);
+    const snapA = JSON.stringify(after);
+    slicesAfterSourceChange(before, after, 'b');
+    expect(JSON.stringify(before)).toBe(snapB);
+    expect(JSON.stringify(after)).toBe(snapA);
   });
 });

@@ -178,3 +178,19 @@ describe('applyCalibration and shapes', () => {
     expect(out[0].corners).toEqual(fresh);
   });
 });
+
+describe('applyCalibration and per-face sources', () => {
+  const look = { look: { style: 'plasma' as const, seed: 3 }, speed: 1, shuffleSec: 0 as const, stylePick: 'auto' as const };
+  const list: Surface[] = [
+    { id: 'a', corners: { tl: [0, 0], tr: [0.4, 0], br: [0.4, 1], bl: [0, 1] }, srcRect: { u0: 0, v0: 0, u1: 0.5, v1: 1 }, source: 'look', look },
+    { id: 'b', corners: { tl: [0.5, 0], tr: [0.9, 0], br: [0.9, 1], bl: [0.5, 1] }, srcRect: { u0: 0.5, v0: 0, u1: 1, v1: 1 }, source: 'look', lookOf: 'a' },
+  ];
+  const fresh = { tl: [0.2, 0.2] as Vec2, tr: [0.8, 0.2] as Vec2, br: [0.8, 0.8] as Vec2, bl: [0.2, 0.8] as Vec2 };
+  it('keeps source, look and lookOf on recalibrated faces', () => {
+    const out = applyCalibration(list, { a: fresh, b: fresh });
+    expect(out[0].corners).toEqual(fresh);
+    expect(out.map((s) => ({ source: s.source, look: s.look, lookOf: s.lookOf }))).toEqual(
+      list.map((s) => ({ source: s.source, look: s.look, lookOf: s.lookOf })),
+    );
+  });
+});

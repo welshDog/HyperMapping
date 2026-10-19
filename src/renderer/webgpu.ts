@@ -1,5 +1,6 @@
 import type { Surface } from '../surfaces/types';
 import { buildTopology } from '../warp/mesh';
+import { distinctVideos } from './face-videos';
 import { FrameLoop } from './frame-loop';
 import { SurfaceSync } from './surface-sync';
 import type { Renderer } from './types';
@@ -129,7 +130,10 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
   const surfaces = new Map<string, GpuSurface>();
   let order: string[] = [];
   let destroyed = false;
-  let video: HTMLVideoElement | null = null;
+  // Which video each face shows: one shared video (setVideo) or a per-face map (setFaceVideos); the last call wins.
+  let allVideo: HTMLVideoElement | null = null;
+  let faceVideos: ReadonlyMap<string, HTMLVideoElement | null> | null = null;
+  const pick = (id: string): HTMLVideoElement | null => (faceVideos ? (faceVideos.get(id) ?? null) : allVideo);
 
   const createSurface = (id: string): GpuSurface => ({
     posBuf: device.createBuffer({
@@ -182,6 +186,8 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     order = r.order;
   };
 
+  const warnedVideos = new WeakSet<HTMLVideoElement>();
+
   const draw = () => {
     if (destroyed) return;
     const encoder = device.createCommandEncoder();
@@ -195,22 +201,40 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
         },
       ],
     });
-    if (video && isVideoReady(video)) {
-      // External textures are valid for one frame, so the bind group is rebuilt each draw
-      // (once per frame, shared by all faces).
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: sampler },
-          { binding: 1, resource: device.importExternalTexture({ source: video }) },
-        ],
-      });
+    // External textures are valid for one frame, so bind groups are rebuilt each draw:
+    // one import + bind group per distinct READY video, shared by every face that uses it.
+    const live = order.filter((id) => surfaces.has(id));
+    const groups = new Map<HTMLVideoElement, GPUBindGroup>();
+    for (const v of distinctVideos(live, pick)) {
+      if (!isVideoReady(v)) continue;
+      try {
+        groups.set(
+          v,
+          device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: sampler },
+              { binding: 1, resource: device.importExternalTexture({ source: v }) },
+            ],
+          }),
+        );
+      } catch (e) {
+        // One bad source must not blank the faces on healthy sources (and must not leave the pass open).
+        if (!warnedVideos.has(v)) {
+          warnedVideos.add(v);
+          console.warn('[hypermapping] a video could not be imported; its faces are skipped', e);
+        }
+      }
+    }
+    if (groups.size > 0) {
       pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
       pass.setIndexBuffer(idxBuf, 'uint16');
-      for (const id of order) {
-        const g = surfaces.get(id);
-        if (!g) continue;
+      for (const id of live) {
+        const v = pick(id);
+        const group = v ? groups.get(v) : undefined;
+        if (!group) continue;
+        const g = surfaces.get(id)!;
+        pass.setBindGroup(0, group);
         pass.setVertexBuffer(0, g.posBuf);
         pass.setVertexBuffer(1, g.uvBuf);
         pass.setVertexBuffer(2, g.frameBuf);
@@ -228,7 +252,12 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     onFrameTime: null,
     setSurfaces,
     setVideo: (v) => {
-      video = v;
+      allVideo = v;
+      faceVideos = null;
+    },
+    setFaceVideos: (m) => {
+      faceVideos = new Map(m); // copy: later edits to the caller's map must not leak in
+      allVideo = null;
     },
     setFpsCap: (cap) => {
       loop.fpsCap = cap;
