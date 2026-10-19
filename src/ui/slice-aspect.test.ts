@@ -2,51 +2,25 @@ import { describe, it, expect } from 'vitest';
 import { sliceAspect } from './slice-aspect';
 
 const PATTERN = 16 / 9;
-const portrait = { width: 720, height: 1280 };
-const square = { width: 500, height: 500 };
 
 describe('sliceAspect', () => {
-  it('uses the video shape when a video is loaded and the pattern is off', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait })).toBeCloseTo(720 / 1280);
-    expect(sliceAspect({ force: false, patternAvailable: true, video: square })).toBe(1);
+  it('look and pattern faces are 16:9, whatever video is loaded', () => {
+    expect(sliceAspect({ source: 'look', patternForced: false, videoAspect: 9 / 16 })).toBeCloseTo(PATTERN);
+    expect(sliceAspect({ source: 'pattern', patternForced: false, videoAspect: 9 / 16 })).toBeCloseTo(PATTERN);
   });
 
-  it('uses the pattern shape (16:9) when the pattern is forced on over a video', () => {
-    expect(sliceAspect({ force: true, patternAvailable: true, video: portrait })).toBeCloseTo(PATTERN);
+  it('a Video face uses the loaded video aspect', () => {
+    expect(sliceAspect({ source: 'video', patternForced: false, videoAspect: 720 / 1280 })).toBeCloseTo(720 / 1280);
+    expect(sliceAspect({ source: 'video', patternForced: false, videoAspect: 1 })).toBe(1);
   });
 
-  it('uses the pattern shape when no video is loaded and the pattern is available', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: null })).toBeCloseTo(PATTERN);
-    expect(sliceAspect({ force: true, patternAvailable: true, video: null })).toBeCloseTo(PATTERN);
+  it('a forced test pattern is 16:9 even on a Video face', () => {
+    expect(sliceAspect({ source: 'video', patternForced: true, videoAspect: 720 / 1280 })).toBeCloseTo(PATTERN);
   });
 
-  it('falls back to the video shape when the pattern is wanted but the browser cannot make it', () => {
-    expect(sliceAspect({ force: true, patternAvailable: false, video: portrait })).toBeCloseTo(720 / 1280);
-  });
-
-  it('falls back to 16:9 when nothing is showing', () => {
-    expect(sliceAspect({ force: true, patternAvailable: false, video: null })).toBeCloseTo(PATTERN);
-    expect(sliceAspect({ force: false, patternAvailable: false, video: null })).toBeCloseTo(PATTERN);
-  });
-
-  it('ignores a video that has no size yet (metadata not loaded)', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: { width: 0, height: 0 } })).toBeCloseTo(PATTERN);
-    expect(sliceAspect({ force: false, patternAvailable: false, video: { width: 0, height: 720 } })).toBeCloseTo(PATTERN);
-  });
-
-  it('uses 16:9 while the generator is on and available, even over a portrait video', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: true })).toBeCloseTo(PATTERN);
-  });
-
-  it('uses the video shape when the generator is on but unavailable', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: false })).toBeCloseTo(720 / 1280);
-  });
-
-  it('ignores the generator when it is off', () => {
-    expect(sliceAspect({ force: false, patternAvailable: true, video: portrait, generatorOn: false, generatorAvailable: true })).toBeCloseTo(720 / 1280);
-  });
-
-  it('lets the forced pattern beat the generator', () => {
-    expect(sliceAspect({ force: true, patternAvailable: true, video: portrait, generatorOn: true, generatorAvailable: true })).toBeCloseTo(PATTERN);
+  it('a Video face with no video (or a video with no size yet) is 16:9', () => {
+    expect(sliceAspect({ source: 'video', patternForced: false, videoAspect: null })).toBeCloseTo(PATTERN);
+    expect(sliceAspect({ source: 'video', patternForced: false, videoAspect: 0 })).toBeCloseTo(PATTERN);
+    expect(sliceAspect({ source: 'video', patternForced: false, videoAspect: NaN })).toBeCloseTo(PATTERN);
   });
 });

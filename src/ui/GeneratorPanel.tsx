@@ -4,7 +4,7 @@ import { SPEED_MAX, SPEED_MIN, setSpeed } from '../generator/speed';
 import { SHUFFLE_CHOICES, type GeneratorState } from '../generator/shuffle';
 import type { AudioSettings } from '../audio/settings';
 import type { AudioStatus, MeterLevels } from './useAudioReactor';
-import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generator-actions';
+import { applyCode, pickStyle, randomizeLook, setShuffle } from './generator-actions';
 
 /** What the Sound section needs from useAudioReactor. */
 export interface SoundProps {
@@ -23,7 +23,7 @@ const STATUS_TEXT: Record<AudioStatus, string> = {
   listening: 'Listening',
   denied: "Microphone blocked: allow it in the browser's site settings",
   'no-mic': 'No microphone found',
-  starting: 'Starting… allow the microphone if asked',
+  starting: 'Startingâ€¦ allow the microphone if asked',
   unsupported: 'Could not start the microphone (it may be in use by another app, or not supported here)',
 };
 
@@ -41,12 +41,23 @@ const METERS: { key: keyof MeterLevels; label: string }[] = [
 ];
 
 interface Props {
-  state: GeneratorState;
-  /** False when this browser cannot make the generator. */
+  /** The selected face, e.g. "Face 2". */
+  faceLabel: string;
+  /** Set when the face shares another face's look (e.g. "Face 1"): the panel then edits that look. */
+  sharedWithLabel?: string | null;
+  /** The selected face shows a visual look (its own or a shared one). */
+  hasLook: boolean;
+  /** The look being edited (the owner's), or null when the face has no look. */
+  state: GeneratorState | null;
+  /** False when this look has no live generator (the browser could not make it). */
   available: boolean;
   /** The Editor's Test pattern button: while on, it hides the visuals. */
   patternForce: boolean;
   onChange: (next: GeneratorState) => void;
+  /** Switch the selected face to its own visual look. */
+  onUseLook: () => void;
+  /** False when all look slots are taken, so a new look cannot start. */
+  canStartLook: boolean;
   audio: SoundProps;
   onClose: () => void;
 }
@@ -65,18 +76,31 @@ const BASE = 'rounded-lg px-3 py-3 text-sm font-medium';
 const OFF = 'bg-zinc-700 text-white';
 const ON = 'bg-cyan-500 text-black';
 const DISABLED = 'bg-zinc-800 text-zinc-500 cursor-not-allowed';
+const CAP_TITLE = 'At most 4 different looks can run at once: switch a face away from its own look first, or share one.';
 
 interface Status {
   text: string;
   error: boolean;
 }
 
-/** The Visuals panel: switch the random-visuals generator on, pick a look, shuffle, copy or enter a code. */
-export function GeneratorPanel({ state, available, patternForce, onChange, audio, onClose }: Props) {
+/** The Visuals panel for the selected face's look: randomize, pick a style, speed, shuffle, copy or enter a code; plus the global Sound section. */
+export function GeneratorPanel({
+  faceLabel,
+  sharedWithLabel = null,
+  hasLook,
+  state,
+  available,
+  patternForce,
+  onChange,
+  onUseLook,
+  canStartLook,
+  audio,
+  onClose,
+}: Props) {
   const [codeText, setCodeText] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const codeBoxRef = useRef<HTMLInputElement>(null);
-  const code = lookToCode(state.look);
+  const code = state ? lookToCode(state.look) : '';
 
   /** One bg-* class per state: pressed, normal and disabled replace each other. */
   const cls = (pressed: boolean) => `${BASE} ${!available ? DISABLED : pressed ? ON : OFF}`;
@@ -104,6 +128,7 @@ export function GeneratorPanel({ state, available, patternForce, onChange, audio
   };
 
   const applyTypedCode = () => {
+    if (!state) return;
     const result = applyCode(state, codeText, Date.now());
     if (!result.ok) {
       setStatus({ text: BAD_CODE, error: true });
@@ -117,143 +142,162 @@ export function GeneratorPanel({ state, available, patternForce, onChange, audio
   return (
     <div className="absolute inset-0 z-40 flex flex-col items-center overflow-auto bg-black/90 p-6">
       <div className="m-auto flex w-full max-w-md flex-col gap-3">
-        <h2 className="text-base font-semibold">Visuals</h2>
-        {available ? (
-          <p className="text-xs text-zinc-400">
-            Random moving visuals for your faces. A loaded video is replaced while this is on; the test pattern still wins.
-          </p>
+        <h2 className="text-base font-semibold">
+          {sharedWithLabel ? `${faceLabel}'s look (shared with ${sharedWithLabel})` : `${faceLabel}'s look`}
+        </h2>
+
+        {!hasLook || !state ? (
+          <>
+            <p className="text-xs text-zinc-400">
+              {faceLabel} is not on a visual look. Switch it to one to get random moving visuals here; the Sound section below works for every face.
+            </p>
+            <button
+              disabled={!canStartLook}
+              title={canStartLook ? undefined : CAP_TITLE}
+              className={`${BASE} ${canStartLook ? ON : DISABLED}`}
+              onClick={onUseLook}
+            >
+              Switch {faceLabel} to a visual look
+            </button>
+          </>
         ) : (
-          <p className="text-xs text-amber-400">Visuals are not supported in this browser</p>
-        )}
+          <>
+            {sharedWithLabel ? (
+              <p className="text-xs text-zinc-400">
+                {faceLabel} shares {sharedWithLabel}&apos;s look: editing it changes both.
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-400">Random moving visuals for {faceLabel}. Faces set to Same as {faceLabel} follow this look.</p>
+            )}
 
-        {available && state.on && patternForce && (
-          <p className="text-xs text-amber-400">
-            The test pattern is on, so the visuals are hidden. Turn Test pattern off to see them.
-          </p>
-        )}
+            {!available && (
+              <p className="text-xs text-amber-400">
+                This look cannot run here (visuals are not supported in this browser, or it failed to start), so {faceLabel} shows the video or test pattern instead.
+              </p>
+            )}
 
-        <div className="flex items-center gap-2">
-          <button
-            aria-pressed={state.on}
-            disabled={!available}
-            className={`${cls(state.on)} min-w-[7.5rem]`}
-            onClick={() => onChange(setOn(state, !state.on, Date.now()))}
-          >
-            Visuals: {state.on ? 'on' : 'off'}
-          </button>
-          <button
-            disabled={!available}
-            className={cls(false)}
-            onClick={() => onChange(randomizeOn(state, Date.now(), Math.random))}
-          >
-            Randomize
-          </button>
-        </div>
+            {available && patternForce && (
+              <p className="text-xs text-amber-400">
+                The test pattern is on, so the visuals are hidden. Turn Test pattern off to see them.
+              </p>
+            )}
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-400">
-            Look: Auto mixes all four; pick one to lock to that style (the picture changes straight away). Showing:{' '}
-            {STYLE_LABEL[state.look.style]}
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {PICKS.map((p) => (
+            <div className="flex items-center gap-2">
               <button
-                key={p}
-                aria-pressed={state.stylePick === p}
                 disabled={!available}
-                className={cls(state.stylePick === p)}
-                onClick={() => onChange(pickStyle(state, p, Date.now(), Math.random))}
+                className={cls(false)}
+                onClick={() => onChange(randomizeLook(state, Date.now(), Math.random))}
               >
-                {STYLE_LABEL[p]}
+                Randomize
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="visuals-speed" className="flex justify-between text-xs text-zinc-400">
-            <span>Speed</span>
-            <span>{state.speed.toFixed(2)}x</span>
-          </label>
-          <input
-            id="visuals-speed"
-            type="range"
-            aria-label="Speed"
-            min={SPEED_MIN}
-            max={SPEED_MAX}
-            step={0.05}
-            value={state.speed}
-            disabled={!available}
-            className="w-full accent-cyan-500 disabled:opacity-40"
-            onChange={(e) => {
-              const v = e.currentTarget.valueAsNumber;
-              if (Number.isFinite(v)) onChange(setSpeed(state, v, Date.now()));
-            }}
-          />
-        </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-zinc-400">
+                Look: Auto mixes all four; pick one to lock to that style (the picture changes straight away). Showing:{' '}
+                {STYLE_LABEL[state.look.style]}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {PICKS.map((p) => (
+                  <button
+                    key={p}
+                    aria-pressed={state.stylePick === p}
+                    disabled={!available}
+                    className={cls(state.stylePick === p)}
+                    onClick={() => onChange(pickStyle(state, p, Date.now(), Math.random))}
+                  >
+                    {STYLE_LABEL[p]}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-400">Auto-shuffle</span>
-          <div className="flex flex-wrap gap-2">
-            {SHUFFLE_CHOICES.map((s) => (
-              <button
-                key={s}
-                aria-pressed={state.shuffleSec === s}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="visuals-speed" className="flex justify-between text-xs text-zinc-400">
+                <span>Speed</span>
+                <span>{state.speed.toFixed(2)}x</span>
+              </label>
+              <input
+                id="visuals-speed"
+                type="range"
+                aria-label="Speed"
+                min={SPEED_MIN}
+                max={SPEED_MAX}
+                step={0.05}
+                value={state.speed}
                 disabled={!available}
-                className={cls(state.shuffleSec === s)}
-                onClick={() => onChange(setShuffle(state, s, Date.now()))}
-              >
-                {s === 0 ? 'Off' : `${s} s`}
-              </button>
-            ))}
-          </div>
-        </div>
+                className="w-full accent-cyan-500 disabled:opacity-40"
+                onChange={(e) => {
+                  const v = e.currentTarget.valueAsNumber;
+                  if (Number.isFinite(v)) onChange(setSpeed(state, v, Date.now()));
+                }}
+              />
+            </div>
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-400">This look&apos;s code</span>
-          <div className="flex gap-2">
-            <input
-              ref={codeBoxRef}
-              readOnly
-              aria-label="Current look code"
-              value={code}
-              className="min-w-0 flex-1 select-text rounded-lg bg-zinc-800 px-3 py-2 text-base text-white"
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <button className={`${BASE} ${OFF}`} onClick={copy}>
-              Copy
-            </button>
-          </div>
-        </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-zinc-400">Auto-shuffle</span>
+              <div className="flex flex-wrap gap-2">
+                {SHUFFLE_CHOICES.map((s) => (
+                  <button
+                    key={s}
+                    aria-pressed={state.shuffleSec === s}
+                    disabled={!available}
+                    className={cls(state.shuffleSec === s)}
+                    onClick={() => onChange(setShuffle(state, s, Date.now()))}
+                  >
+                    {s === 0 ? 'Off' : `${s} s`}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-400">Use a code</span>
-          <div className="flex gap-2">
-            <input
-              aria-label="Look code to use"
-              className="min-w-0 flex-1 select-text rounded-lg bg-zinc-800 px-3 py-2 text-base text-white disabled:opacity-40"
-              placeholder="K-7F3A92C1B"
-              maxLength={16}
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={!available}
-              value={codeText}
-              onChange={(e) => {
-                setCodeText(e.target.value.trim().toUpperCase());
-                setStatus(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyTypedCode();
-              }}
-            />
-            <button disabled={!available} className={cls(false)} onClick={applyTypedCode}>
-              Use code
-            </button>
-          </div>
-        </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-zinc-400">This look&apos;s code</span>
+              <div className="flex gap-2">
+                <input
+                  ref={codeBoxRef}
+                  readOnly
+                  aria-label="Current look code"
+                  value={code}
+                  className="min-w-0 flex-1 select-text rounded-lg bg-zinc-800 px-3 py-2 text-base text-white"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button className={`${BASE} ${OFF}`} onClick={copy}>
+                  Copy
+                </button>
+              </div>
+            </div>
 
-        {status && <p className={`text-xs ${status.error ? 'text-amber-400' : 'text-emerald-400'}`}>{status.text}</p>}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-zinc-400">Use a code</span>
+              <div className="flex gap-2">
+                <input
+                  aria-label="Look code to use"
+                  className="min-w-0 flex-1 select-text rounded-lg bg-zinc-800 px-3 py-2 text-base text-white disabled:opacity-40"
+                  placeholder="K-7F3A92C1B"
+                  maxLength={16}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={!available}
+                  value={codeText}
+                  onChange={(e) => {
+                    setCodeText(e.target.value.trim().toUpperCase());
+                    setStatus(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyTypedCode();
+                  }}
+                />
+                <button disabled={!available} className={cls(false)} onClick={applyTypedCode}>
+                  Use code
+                </button>
+              </div>
+            </div>
+
+          {status && <p className={`text-xs ${status.error ? 'text-amber-400' : 'text-emerald-400'}`}>{status.text}</p>}
+          </>
+        )}
 
         <div className="mt-2 flex flex-col gap-3 border-t border-zinc-700 pt-3">
           <h3 className="text-sm font-semibold">Sound</h3>
@@ -265,7 +309,7 @@ export function GeneratorPanel({ state, available, patternForce, onChange, audio
               className={listenCls}
               onClick={() => (listening ? audio.stop() : void audio.start())}
             >
-              {listening ? 'Stop' : starting ? 'Starting…' : 'Listen'}
+              {listening ? 'Stop' : starting ? 'Startingâ€¦' : 'Listen'}
             </button>
             <span role="status" className="text-xs text-zinc-400">
               {soundOk ? STATUS_TEXT[audio.status] : ''}

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { lookToCode, type Look } from '../generator/look';
 import { initialState, isValidState, shuffleDue } from '../generator/shuffle';
-import { applyCode, pickStyle, randomizeOn, setOn, setShuffle } from './generator-actions';
+import { applyCode, pickStyle, randomizeLook, setShuffle } from './generator-actions';
 
-const base = { ...initialState(1000, () => 0.3) };
+const base = { ...initialState(1000, () => 0.3), on: true }; // a look is always on
 
 describe('time fields are preserved', () => {
-  const s = { ...base, on: true, speed: 1.7, timeAnchor: 42, speedChangedAt: 777 };
+  const s = { ...base, speed: 1.7, timeAnchor: 42, speedChangedAt: 777 };
   const keep = (n: typeof s) => {
     expect(n.speed).toBe(1.7);
     expect(n.timeAnchor).toBe(42);
@@ -14,65 +14,36 @@ describe('time fields are preserved', () => {
   };
   it('pickStyle', () => keep(pickStyle(s, 'neon', 5000, () => 0.4)));
   it('setShuffle', () => keep(setShuffle(s, 30, 5000)));
-  it('randomizeOn', () => keep(randomizeOn(s, 5000, () => 0.6)));
+  it('randomizeLook', () => keep(randomizeLook(s, 5000, () => 0.6)));
 });
 
-describe('setOn', () => {
-  it('turning on resets both clocks to now and drops a stale fade', () => {
-    const s = setOn({ ...base, prev: { style: 'neon', seed: 5 } }, true, 9000);
+describe('randomizeLook', () => {
+  it('cross-fades to a different look and keeps the clocks and time fields', () => {
+    const s = randomizeLook(base, 9000, Math.random);
     expect(s.on).toBe(true);
-    expect(s.startedAt).toBe(9000);
-    expect(s.changedAt).toBe(9000);
-    expect(s.prev).toBeNull();
-  });
-  it('turning on also restarts the shader time and keeps speed', () => {
-    const s = setOn({ ...base, speed: 2, timeAnchor: 40, speedChangedAt: 3 }, true, 9000);
-    expect(s.timeAnchor).toBe(0);
-    expect(s.speedChangedAt).toBe(9000);
-    expect(s.speed).toBe(2);
-  });
-  it('turning off leaves the time fields', () => {
-    const on = { ...base, on: true, speed: 2, timeAnchor: 40, speedChangedAt: 3 };
-    const s = setOn(on, false, 9000);
-    expect(s.timeAnchor).toBe(40);
-    expect(s.speedChangedAt).toBe(3);
-  });
-  it('turning on when already on changes nothing (no visual jump)', () => {
-    const on = { ...base, on: true };
-    expect(setOn(on, true, 9000)).toBe(on);
-  });
-  it('turning off keeps the clocks', () => {
-    const on = { ...base, on: true, startedAt: 5, changedAt: 6 };
-    const s = setOn(on, false, 9000);
-    expect(s).toEqual({ ...on, on: false });
-  });
-});
-
-describe('randomizeOn', () => {
-  it('turns on with fresh clocks and a different look', () => {
-    const s = randomizeOn(base, 9000, Math.random);
-    expect(s.on).toBe(true);
-    expect(s.startedAt).toBe(9000);
-    expect(s.changedAt).toBe(9000);
+    expect(s.startedAt).toBe(base.startedAt);
+    expect(s.timeAnchor).toBe(base.timeAnchor);
     expect(s.look).not.toEqual(base.look);
     expect(s.prev).toEqual(base.look);
+    expect(s.changedAt).toBe(9000);
+    expect(isValidState(s)).toBe(true);
   });
-  it('keeps startedAt when already on', () => {
-    const on = { ...base, on: true, startedAt: 500 };
-    expect(randomizeOn(on, 9000, Math.random).startedAt).toBe(500);
+  it('keeps startedAt of a running look', () => {
+    const on = { ...base, startedAt: 500 };
+    expect(randomizeLook(on, 9000, Math.random).startedAt).toBe(500);
   });
 });
 
 describe('applyCode', () => {
   const look: Look = { style: 'kaleidoscope', seed: 0x7f3a92c1 };
-  it('accepts a good code with a cross-fade and turns on', () => {
+  it('accepts a good code with a cross-fade and keeps the clocks', () => {
     const r = applyCode(base, `  ${lookToCode(look).toLowerCase()} `, 9000);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.look).toEqual(look);
     expect(r.state.prev).toEqual(base.look);
     expect(r.state.changedAt).toBe(9000);
-    expect(r.state.startedAt).toBe(9000);
+    expect(r.state.startedAt).toBe(base.startedAt);
     expect(r.state.on).toBe(true);
   });
   it('rejects garbage without throwing', () => {
@@ -98,10 +69,6 @@ describe('pickStyle', () => {
     expect(s.look).toEqual(on.look);
     expect(s.changedAt).toBe(100);
     expect(s.stylePick).toBe('plasma');
-  });
-  it('off only changes stylePick', () => {
-    const off = { ...on, on: false };
-    expect(pickStyle(off, 'neon', 9000, Math.random)).toEqual({ ...off, stylePick: 'neon' });
   });
   it('auto only changes stylePick', () => {
     const s = pickStyle({ ...on, stylePick: 'neon' }, 'auto', 9000, Math.random);

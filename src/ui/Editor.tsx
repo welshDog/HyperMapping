@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { settingsFromState, stateFromSettings } from '../generator/settings';
+import { settingsFromState } from '../generator/settings';
 import type { GeneratorState } from '../generator/shuffle';
 import { CHANNEL, parseMsg } from '../output/protocol';
 import { DEMO_FILE_NAME, demoVideoUrl } from '../sources/demo';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../sources/resolve';
-import { canStartLook, ownerOf, setFaceSource } from '../surfaces/sources';
+import { canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape } from '../surfaces/model';
-import { FULL_RECT, shapeOf, type FaceShape, type SrcRect, type Surface } from '../surfaces/types';
+import { FULL_RECT, shapeOf, sourceOf, type FaceShape, type FaceSource, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import { createAutosaver } from '../setups/autosave';
 import { getBrowserStore } from '../setups/browser-store';
@@ -317,63 +317,73 @@ export function Editor() {
     bump(); // the slice panel is a small tree; re-rendering it per move is fine
   };
 
-  // The slice box has the shape of the picture actually on the SELECTED face: 16:9 for the test pattern
-  // or a look, otherwise the loaded video's. (Task 8 reworks slice aspect per face.)
-  const selectedShows = resolveFaceSources(surfacesRef.current, resolveContext()).get(selectedId);
-  const videoAspect = (() => {
-    const v = videoRef.current?.video;
-    return sliceAspect({
-      force: selectedShows?.kind === 'pattern',
-      patternAvailable,
-      generatorOn: selectedShows?.kind === 'look',
-      generatorAvailable: true,
-      video: v ? { width: v.videoWidth, height: v.videoHeight } : null,
-    });
-  })();
-
-  // The Visuals panel edits the selected face's look (its own, or the one it shares). A face not on a
-  // look gets an Off draft: changes made while Off stay in the draft, and switching On gives the face its
-  // own look made from the draft. Task 8 replaces this adapter with the real per-face panel.
+  // The selected face, the face whose look it edits (itself, or the owner it shares) and that look's state.
   const selectedFace = surfacesRef.current.find((f) => f.id === selectedId) ?? null;
   const selectedOwner = selectedFace ? ownerOf(surfacesRef.current, selectedFace) : null;
   const selectedLook =
     selectedOwner && Object.hasOwn(looks.looks, selectedOwner.id) ? looks.looks[selectedOwner.id] : null;
-  const offDraft = (): GeneratorState => ({ ...stateFromSettings(looks.newLookSettings(), Date.now()), on: false });
-  const [draft, setDraft] = useState<GeneratorState>(offDraft);
-  useEffect(() => {
-    if (visualsOpen) setDraft(offDraft()); // a fresh draft each time the panel opens or the selection changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- offDraft only reads stable things
-  }, [visualsOpen, selectedId]);
+  const faceNumber = (id: string) => surfacesRef.current.findIndex((f) => f.id === id) + 1;
+  const faceLabel = `Face ${faceNumber(selectedId)}`;
+  const sharesOwner = selectedFace !== null && selectedOwner !== null && selectedOwner.id !== selectedFace.id;
 
-  const onVisualsChange = (next: GeneratorState) => {
+  // The slice box has the shape of the picture actually on the SELECTED face: 16:9 for the test pattern
+  // or a look, the loaded video's for a Video face.
+  const selectedShows = resolveFaceSources(surfacesRef.current, resolveContext()).get(selectedId);
+  const videoAspect = (() => {
+    const v = videoRef.current?.video;
+    return sliceAspect({
+      source: selectedShows?.kind === 'video' ? 'video' : selectedShows?.kind === 'pattern' ? 'pattern' : 'look',
+      patternForced: patternForce && patternAvailable,
+      videoAspect: v && v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : null,
+    });
+  })();
+
+  /** Switch the selected face to its own visual look (the cap is checked by setFaceSource). */
+  const startOwnLook = (makeSettings: () => ReturnType<typeof looks.newLookSettings>) => {
     const list = surfacesRef.current;
-    if (selectedLook && selectedOwner) {
-      if (next.on) {
-        looks.updateLook(selectedOwner.id, next);
-        return;
-      }
-      // "Visuals: off" puts this face back on Video; faces sharing its look keep their picture.
-      const off = setFaceSource(list, selectedId, 'video', looks.newLookSettings);
-      if (off !== list) {
-        publish(off);
-        bump();
-      }
-      return;
-    }
-    if (!next.on) {
-      setDraft(next);
-      return;
-    }
     if (!canStartLook(list)) {
-      setNotice('At most 4 different looks can run at once: turn one off first.');
+      setNotice('At most 4 different looks can run at once: switch one away from its own look first.');
       return;
     }
-    const on = setFaceSource(list, selectedId, 'look', () => settingsFromState(next));
-    if (on === list) return;
-    publish(on);
+    const next = setFaceSource(list, selectedId, 'look', makeSettings);
+    if (next === list) return;
+    publish(next);
     // Through updateLook once, so the new look is remembered like every other look change.
     if (Object.hasOwn(looksRef.current, selectedId)) looks.updateLook(selectedId, looksRef.current[selectedId]);
+    setNotice(null);
     bump();
+  };
+
+  const onSetSource = (source: FaceSource) => {
+    const list = surfacesRef.current;
+    if (source === 'look') {
+      // Already on a look (own or shared): leave it be. "Own look" / "Same as" change that.
+      if (selectedFace && sourceOf(selectedFace) === 'look') return;
+      startOwnLook(looks.newLookSettings);
+      return;
+    }
+    const next = setFaceSource(list, selectedId, source, looks.newLookSettings);
+    if (next === list) return;
+    publish(next);
+    bump();
+  };
+
+  /** From "Same as Face N" back to a look of its own, starting from the shared look so the picture does not jump. */
+  const onOwnLook = () => {
+    startOwnLook(selectedLook ? () => settingsFromState(selectedLook) : looks.newLookSettings);
+  };
+
+  const onShareLook = (ownerId: string) => {
+    const list = surfacesRef.current;
+    const next = shareLook(list, selectedId, ownerId);
+    if (next === list) return;
+    publish(next);
+    bump();
+  };
+
+  /** A change in the Visuals panel edits the look of the owner of the selected face. */
+  const onVisualsChange = (next: GeneratorState) => {
+    if (selectedOwner) looks.updateLook(selectedOwner.id, next);
   };
 
   /** Show a video on the faces and send it to the Output window: shared by the file picker and the demo button. */
@@ -503,6 +513,14 @@ export function Editor() {
             onSetShape={setShape}
             onDelete={deleteFace}
             onEditSlice={() => setSliceMode(true)}
+            selectedSource={selectedFace ? sourceOf(selectedFace) : 'video'}
+            onSetSource={onSetSource}
+            lookChoice={sharesOwner && selectedOwner ? { mode: 'shared', ownerId: selectedOwner.id } : { mode: 'own' }}
+            owners={lookOwners(surfacesRef.current)
+              .filter((f) => f.id !== selectedId)
+              .map((f) => ({ id: f.id, label: `Face ${faceNumber(f.id)}` }))}
+            onOwnLook={onOwnLook}
+            onShareLook={onShareLook}
           />
           <label
             className={`rounded-lg px-4 py-3 font-medium ${
@@ -543,12 +561,10 @@ export function Editor() {
           </button>
           <button
             aria-haspopup="dialog"
-            disabled={!looks.available}
-            title={looks.available ? undefined : 'Visuals are not supported in this browser'}
-            className={`rounded-lg px-4 py-3 font-medium min-w-[8.5rem] disabled:opacity-40 ${selectedLook ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
+            className={`rounded-lg px-4 py-3 font-medium ${selectedLook ? 'bg-cyan-500 text-black' : 'bg-zinc-700'}`}
             onClick={() => setVisualsOpen(true)}
           >
-            Visuals: {selectedLook ? 'on' : 'off'}
+            Visuals
           </button>
           <button className="rounded-lg bg-zinc-700 px-4 py-3" onClick={openOutput}>
             Open output window
@@ -602,10 +618,15 @@ export function Editor() {
 
       {mode === 'edit' && visualsOpen && (
         <GeneratorPanel
-          state={selectedLook ?? draft}
-          available={looks.available}
+          faceLabel={faceLabel}
+          sharedWithLabel={sharesOwner && selectedOwner ? `Face ${faceNumber(selectedOwner.id)}` : null}
+          hasLook={selectedLook !== null}
+          state={selectedLook}
+          available={selectedOwner !== null && pool.hasSource(selectedOwner.id)}
           patternForce={patternForce}
           onChange={onVisualsChange}
+          onUseLook={() => startOwnLook(looks.newLookSettings)}
+          canStartLook={canStartLook(surfacesRef.current)}
           audio={audio}
           onClose={() => setVisualsOpen(false)}
         />
