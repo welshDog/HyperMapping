@@ -5,7 +5,7 @@ import { CHANNEL, parseMsg } from '../output/protocol';
 import { DEMO_FILE_NAME, demoVideoUrl } from '../sources/demo';
 import { createPatternSource, type PatternSource } from '../sources/pattern';
 import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../sources/resolve';
-import { canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
+import { MAX_LOOKS, canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, applyCornersById, moveFaceBy, moveGluedPin, type PinRef } from '../surfaces/glue';
 import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape, slicesAfterSourceChange } from '../surfaces/model';
@@ -365,7 +365,7 @@ export function Editor() {
   const startOwnLook = (makeSettings: () => ReturnType<typeof looks.newLookSettings>) => {
     const list = surfacesRef.current;
     if (!canStartLook(list)) {
-      setNotice('At most 4 different looks can run at once: switch one away from its own look first.');
+      setNotice(`At most ${MAX_LOOKS} different looks can run at once: switch one away from its own look first.`);
       return;
     }
     const changed = setFaceSource(list, selectedId, 'look', makeSettings);

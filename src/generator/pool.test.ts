@@ -220,3 +220,43 @@ describe('ownersChanged', () => {
     expect(ownersChanged(['a', 'b'], ['b', 'a'])).toBe(false);
   });
 });
+
+describe('creation order and cleanup', () => {
+  it('a new source gets its size before its state, so its first draw is at the final size', () => {
+    const order: string[] = [];
+    const pool = createLookPool(() => {
+      const f = makeFake();
+      f.setSize = () => void order.push('size');
+      f.setState = () => void order.push('state');
+      return f;
+    });
+    pool.setSize(640, 360);
+    pool.setState('a', st(1));
+    pool.sync(['a']);
+    expect(order).toEqual(['size', 'state']);
+  });
+  it('state set while the factory fails is delivered when a later sync succeeds', () => {
+    let ok = false;
+    const made: Fake[] = [];
+    const pool = createLookPool(() => {
+      if (!ok) return null;
+      const f = makeFake();
+      made.push(f);
+      return f;
+    });
+    pool.setState('a', st(7));
+    pool.sync(['a']);
+    expect(pool.hasSource('a')).toBe(false);
+    ok = true;
+    pool.sync(['a']);
+    expect(made[0].states).toEqual([st(7)]);
+  });
+  it('a dropped owner leaves no stale state behind when its id comes back', () => {
+    const { made, pool } = setup();
+    pool.setState('a', st(1));
+    pool.sync(['a']);
+    pool.sync([]);
+    pool.sync(['a']);
+    expect(made[1].states).toEqual([]);
+  });
+});

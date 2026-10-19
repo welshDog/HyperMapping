@@ -63,10 +63,11 @@ export function createLookPool(factory: () => LookSource | null): LookPool {
           continue;
         }
         sources.set(owner, src);
+        // Size first, so the first frame drawn after setState is already at the final size.
+        if (size) src.setSize(size.w, size.h);
         const state = states.get(owner);
         if (state) src.setState(state);
         if (audio) src.setAudio(audio);
-        if (size) src.setSize(size.w, size.h);
         if (activeSet) src.setActive(activeSet.has(owner));
       }
     },

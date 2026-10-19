@@ -10,7 +10,14 @@ export function lookRenderSize(liveLooks: number): { w: number; h: number } {
   return liveLooks >= 3 ? { ...SMALL } : { ...FULL };
 }
 
-/** Capture rate of each look's stream. Stays 30 (it may drop to 24 for 4 looks only if the live check says so). */
-export function captureFpsFor(_liveLooks: number): 30 {
-  return 30;
+/**
+ * The size to use now, given the size in use and the number of showing looks. Shrinks at 3 looks and only
+ * grows back at 1 or fewer, so adding and removing a look around the 2/3 boundary does not resize (and
+ * clear and re-capture) every look each time. With no current size it is the plain rule.
+ */
+export function chooseLookSize(current: { w: number; h: number } | null, liveLooks: number): { w: number; h: number } {
+  if (current === null) return lookRenderSize(liveLooks);
+  if (liveLooks >= 3) return { ...SMALL };
+  if (liveLooks <= 1) return { ...FULL };
+  return { w: current.w, h: current.h };
 }
