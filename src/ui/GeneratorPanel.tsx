@@ -4,6 +4,7 @@ import { SPEED_MAX, SPEED_MIN, setSpeed } from '../generator/speed';
 import { SHUFFLE_CHOICES, type GeneratorState } from '../generator/shuffle';
 import type { AudioSettings } from '../audio/settings';
 import type { AudioStatus, MeterLevels } from './useAudioReactor';
+import { MAX_LOOKS } from '../surfaces/sources';
 import { applyCode, pickStyle, randomizeLook, setShuffle } from './generator-actions';
 
 /** What the Sound section needs from useAudioReactor. */
@@ -58,6 +59,9 @@ interface Props {
   onUseLook: () => void;
   /** False when all look slots are taken, so a new look cannot start. */
   canStartLook: boolean;
+  /** The faces that own a look, which a face without one can share (always allowed). */
+  owners: { id: string; label: string }[];
+  onShareLook: (ownerId: string) => void;
   audio: SoundProps;
   onClose: () => void;
 }
@@ -76,7 +80,7 @@ const BASE = 'rounded-lg px-3 py-3 text-sm font-medium';
 const OFF = 'bg-zinc-700 text-white';
 const ON = 'bg-cyan-500 text-black';
 const DISABLED = 'bg-zinc-800 text-zinc-500 cursor-not-allowed';
-const CAP_TITLE = 'At most 4 different looks can run at once: switch a face away from its own look first, or share one.';
+const CAP_TITLE = `At most ${MAX_LOOKS} different looks can run at once: switch a face away from its own look first, or share one.`;
 
 interface Status {
   text: string;
@@ -94,6 +98,8 @@ export function GeneratorPanel({
   onChange,
   onUseLook,
   canStartLook,
+  owners,
+  onShareLook,
   audio,
   onClose,
 }: Props) {
@@ -159,6 +165,16 @@ export function GeneratorPanel({
             >
               Switch {faceLabel} to a visual look
             </button>
+            {owners.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-zinc-400">Or share</span>
+                {owners.map((o) => (
+                  <button key={o.id} className={`${BASE} ${OFF}`} onClick={() => onShareLook(o.id)}>
+                    Same as {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <>

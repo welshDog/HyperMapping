@@ -8,7 +8,7 @@ import { resolveFaceSources, visibleLookOwners, type ResolveContext } from '../s
 import { canStartLook, lookOwners, ownerOf, setFaceSource, shareLook } from '../surfaces/sources';
 import { createVideoFromBlob, type VideoHandle } from '../sources/video';
 import { SNAP_RADIUS_PX, moveGluedPin, type PinRef } from '../surfaces/glue';
-import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape } from '../surfaces/model';
+import { addSurface, defaultCorners, isValidSrcRect, removeSurface, selectAfterRemove, setSurfaceShape, slicesAfterSourceChange } from '../surfaces/model';
 import { FULL_RECT, shapeOf, sourceOf, type FaceShape, type FaceSource, type SrcRect, type Surface } from '../surfaces/types';
 import { isValidQuad } from '../warp/quad';
 import { createAutosaver } from '../setups/autosave';
@@ -326,6 +326,11 @@ export function Editor() {
   const faceLabel = `Face ${faceNumber(selectedId)}`;
   const sharesOwner = selectedFace !== null && selectedOwner !== null && selectedOwner.id !== selectedFace.id;
 
+  /** The other faces that own a look: what the selected face could share. */
+  const shareTargets = lookOwners(surfacesRef.current)
+    .filter((f) => f.id !== selectedId)
+    .map((f) => ({ id: f.id, label: `Face ${faceNumber(f.id)}` }));
+
   // The slice box has the shape of the picture actually on the SELECTED face: 16:9 for the test pattern
   // or a look, the loaded video's for a Video face.
   const selectedShows = resolveFaceSources(surfacesRef.current, resolveContext()).get(selectedId);
@@ -345,9 +350,9 @@ export function Editor() {
       setNotice('At most 4 different looks can run at once: switch one away from its own look first.');
       return;
     }
-    const next = setFaceSource(list, selectedId, 'look', makeSettings);
-    if (next === list) return;
-    publish(next);
+    const changed = setFaceSource(list, selectedId, 'look', makeSettings);
+    if (changed === list) return;
+    publish(slicesAfterSourceChange(list, changed, selectedId));
     // Through updateLook once, so the new look is remembered like every other look change.
     if (Object.hasOwn(looksRef.current, selectedId)) looks.updateLook(selectedId, looksRef.current[selectedId]);
     setNotice(null);
@@ -362,9 +367,9 @@ export function Editor() {
       startOwnLook(looks.newLookSettings);
       return;
     }
-    const next = setFaceSource(list, selectedId, source, looks.newLookSettings);
-    if (next === list) return;
-    publish(next);
+    const changed = setFaceSource(list, selectedId, source, looks.newLookSettings);
+    if (changed === list) return;
+    publish(slicesAfterSourceChange(list, changed, selectedId));
     bump();
   };
 
@@ -375,9 +380,9 @@ export function Editor() {
 
   const onShareLook = (ownerId: string) => {
     const list = surfacesRef.current;
-    const next = shareLook(list, selectedId, ownerId);
-    if (next === list) return;
-    publish(next);
+    const changed = shareLook(list, selectedId, ownerId);
+    if (changed === list) return;
+    publish(slicesAfterSourceChange(list, changed, selectedId));
     bump();
   };
 
@@ -516,9 +521,7 @@ export function Editor() {
             selectedSource={selectedFace ? sourceOf(selectedFace) : 'video'}
             onSetSource={onSetSource}
             lookChoice={sharesOwner && selectedOwner ? { mode: 'shared', ownerId: selectedOwner.id } : { mode: 'own' }}
-            owners={lookOwners(surfacesRef.current)
-              .filter((f) => f.id !== selectedId)
-              .map((f) => ({ id: f.id, label: `Face ${faceNumber(f.id)}` }))}
+            owners={shareTargets}
             onOwnLook={onOwnLook}
             onShareLook={onShareLook}
           />
@@ -627,6 +630,8 @@ export function Editor() {
           onChange={onVisualsChange}
           onUseLook={() => startOwnLook(looks.newLookSettings)}
           canStartLook={canStartLook(surfacesRef.current)}
+          owners={shareTargets}
+          onShareLook={onShareLook}
           audio={audio}
           onClose={() => setVisualsOpen(false)}
         />

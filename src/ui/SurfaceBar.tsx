@@ -125,10 +125,11 @@ export function SurfaceBar({
           );
         })}
       </div>
-      {selectedSource === 'look' && (
+      {(selectedSource === 'look' || owners.length > 0) && (
         <div className="flex w-full flex-wrap items-center gap-2">
-          <span className="text-xs text-zinc-400">Look</span>
-          {(() => {
+          <span className="text-xs text-zinc-400">{selectedSource === 'look' ? 'Look' : 'Share'}</span>
+          {selectedSource === 'look' &&
+            (() => {
             const own = lookChoice.mode === 'own';
             const blocked = !own && capFull; // leaving a shared look for an own one needs a free look slot
             return (
