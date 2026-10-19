@@ -199,6 +199,8 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     order = r.order;
   };
 
+  const warnedVideos = new WeakSet<HTMLVideoElement>();
+
   const draw = () => {
     if (destroyed) return;
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -216,9 +218,17 @@ export function createWebGL2Renderer(canvas: HTMLCanvasElement, options: Rendere
     const ready = new Set<HTMLVideoElement>();
     for (const v of used) {
       if (!isVideoReady(v)) continue;
-      gl.bindTexture(gl.TEXTURE_2D, textureFor(v));
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); // once per frame per distinct video
-      ready.add(v);
+      try {
+        gl.bindTexture(gl.TEXTURE_2D, textureFor(v));
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); // once per frame per distinct video
+        ready.add(v);
+      } catch (e) {
+        // One bad source (for example a tainted video) must not blank the faces on healthy sources.
+        if (!warnedVideos.has(v)) {
+          warnedVideos.add(v);
+          console.warn('[hypermapping] a video could not be uploaded; its faces are skipped', e);
+        }
+      }
     }
     for (const id of live) {
       const v = pick(id);

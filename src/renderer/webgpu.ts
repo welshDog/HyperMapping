@@ -186,6 +186,8 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     order = r.order;
   };
 
+  const warnedVideos = new WeakSet<HTMLVideoElement>();
+
   const draw = () => {
     if (destroyed) return;
     const encoder = device.createCommandEncoder();
@@ -205,16 +207,24 @@ export async function createWebGPURenderer(canvas: HTMLCanvasElement): Promise<R
     const groups = new Map<HTMLVideoElement, GPUBindGroup>();
     for (const v of distinctVideos(live, pick)) {
       if (!isVideoReady(v)) continue;
-      groups.set(
-        v,
-        device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: sampler },
-            { binding: 1, resource: device.importExternalTexture({ source: v }) },
-          ],
-        }),
-      );
+      try {
+        groups.set(
+          v,
+          device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: sampler },
+              { binding: 1, resource: device.importExternalTexture({ source: v }) },
+            ],
+          }),
+        );
+      } catch (e) {
+        // One bad source must not blank the faces on healthy sources (and must not leave the pass open).
+        if (!warnedVideos.has(v)) {
+          warnedVideos.add(v);
+          console.warn('[hypermapping] a video could not be imported; its faces are skipped', e);
+        }
+      }
     }
     if (groups.size > 0) {
       pass.setPipeline(pipeline);
